@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 
 interface StageProps {
     maxWidth: number;
@@ -6,21 +6,20 @@ interface StageProps {
     stageWidth: number;
     stageHeight: number;
     stageBackground: Promise<CanvasImageSource>;
+    stageCenter: [number, number];
     windowWidth: number;
     windowHeight: number;
-    startX: number;
-    startY: number;
     backgroundColor: string;
 }
 
-const Stage = ({maxWidth, maxHeight, stageWidth, stageHeight, stageBackground, windowWidth, windowHeight, startX, startY, backgroundColor}: StageProps) => {
-    // const [scale, setScale] = useState({x: 1, y: 1})
-    // const [frameTime, setFrameTime] = useState(performance.now());
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const canvasWidth = window.innerWidth;
-    const canvasHeight = window.innerHeight;
+const Stage = ({maxWidth, maxHeight, stageWidth, stageHeight, stageBackground, stageCenter, windowWidth, windowHeight, backgroundColor}: StageProps) => {
+    // const [frameTime, setFrameTime] = React.useState(performance.now());
+    const [stageX, stageY] = stageCenter;
+    const canvasRef = React.useRef<HTMLCanvasElement>(null);
+    const canvasWidth = Math.min(window.innerWidth, maxWidth);
+    const canvasHeight = Math.min(window.innerHeight, maxHeight);
 
-    useEffect(() => {
+    React.useEffect(() => {
         const context: CanvasRenderingContext2D | null | undefined = canvasRef.current?.getContext('2d');
         if (context) {
             context.beginPath();
@@ -37,7 +36,7 @@ const Stage = ({maxWidth, maxHeight, stageWidth, stageHeight, stageBackground, w
             // Background image
             const backgroundImagePromise = stageBackground.then((bgImg) => {
                 return () => {
-                    context.drawImage(bgImg, startX - windowWidth/2, startY - windowHeight/2, windowWidth, windowHeight, 0, 0, canvasWidth, canvasHeight);
+                    context.drawImage(bgImg, stageX - windowWidth/2, stageY - windowHeight/2, windowWidth, windowHeight, 0, 0, canvasWidth, canvasHeight);
                 }   
             });
             drawPromises.push(backgroundImagePromise);
@@ -60,18 +59,9 @@ const Stage = ({maxWidth, maxHeight, stageWidth, stageHeight, stageBackground, w
                 console.error(err);
             });;
         }
-    }, []);
+    }, [backgroundColor, canvasHeight, canvasWidth, stageBackground, stageX, stageY, windowHeight, windowWidth]);
 
-    return <canvas ref={canvasRef} height={canvasHeight} width={canvasWidth} style={{display: "block"}}/>
+    return <canvas ref={canvasRef} height={canvasHeight} width={canvasWidth} style={{display: "block", margin: "auto"}}/>
 };
 
 export default Stage;
-
-function background(context: CanvasRenderingContext2D, backgroundColor: string, backgroundImage: Promise<HTMLImageElement>) {
-    
-}
-
-function rect(props: any) {
-    const {ctx, x, y, width, height} = props;
-    ctx?.fillRect(x, y, width, height);
-}
