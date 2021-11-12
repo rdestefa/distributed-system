@@ -1,3 +1,7 @@
+# Backend
+
+Initial backend setup based on tutorial from the websocket implementation we are using: https://github.com/nhooyr/websocket/tree/v1.8.7/examples/chat
+
 To run: `go run .`
 To test:
 
