@@ -15,7 +15,7 @@ import (
 )
 
 type server struct {
-	game        *game
+	game        *Game
 	clients     map[*client]struct{}
 	clientsMu   sync.Mutex
 	serveMux    http.ServeMux
@@ -24,7 +24,7 @@ type server struct {
 }
 
 type client struct {
-	player    *player
+	player    *Player
 	out       chan []byte
 	closeSlow func()
 }
@@ -41,9 +41,9 @@ func newServer() *server {
 
 	go func() {
 		for t := range s.ticker.C {
-			if len(s.game.players) < 10 {
-				s.send([]byte(t.String() + ": " + strconv.Itoa(len(s.game.players)) + " players in lobby"))
-			} else if len(s.game.players) == 10 {
+			if len(s.game.Players) < 10 {
+				s.send([]byte(t.String() + ": " + strconv.Itoa(len(s.game.Players)) + " players in lobby"))
+			} else if len(s.game.Players) == 10 {
 				s.send([]byte("Game is starting"))
 				s.game.start()
 				break
@@ -89,12 +89,12 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 		player: newPlayer(name),
 		out:    make(chan []byte, 16),
 		closeSlow: func() {
-			conn.Close(websocket.StatusPolicyViolation, "connection too slow to keep up with messages")
+			conn.Close(websocket.StatusPolicyViolation, "Connection too slow to keep up with messages")
 		},
 	}
 
 	if !s.game.addPlayer(c.player) {
-		conn.Close(websocket.StatusTryAgainLater, "game is full")
+		conn.Close(websocket.StatusTryAgainLater, "Game is full")
 		return ctx.Err()
 	}
 
