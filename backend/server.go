@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -30,9 +31,9 @@ type client struct {
 
 func newServer() *server {
 	s := &server{
-		game:        nil,
+		game:        newGame(),
 		clients:     make(map[*client]struct{}),
-		ticker:      time.NewTicker(500 * time.Millisecond),
+		ticker:      time.NewTicker(5000 * time.Millisecond),
 		rateLimiter: rate.NewLimiter(rate.Every(time.Millisecond*100), 8),
 	}
 	s.serveMux.Handle("/", http.FileServer(http.Dir(".")))
@@ -40,7 +41,13 @@ func newServer() *server {
 
 	go func() {
 		for t := range s.ticker.C {
-			s.send([]byte("Tick at " + t.String()))
+			if len(s.game.players) < 10 {
+				s.send([]byte(t.String() + ": " + strconv.Itoa(len(s.game.players)) + " players in lobby"))
+			} else if len(s.game.players) == 10 {
+				s.send([]byte("Game is starting"))
+				s.game.start()
+				break
+			}
 		}
 	}()
 
@@ -61,7 +68,7 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close(websocket.StatusInternalError, "")
 
-	err = s.connect(r.Context(), c)
+	err = s.connect(r.Context(), c, r.URL.Query().Get("name"))
 	if errors.Is(err, context.Canceled) {
 		return
 	}
@@ -75,15 +82,20 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) connect(ctx context.Context, conn *websocket.Conn) error {
+func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string) error {
 	ctx = conn.CloseRead(ctx)
 
 	c := &client{
-		player: nil,
+		player: newPlayer(name),
 		out:    make(chan []byte, 16),
 		closeSlow: func() {
 			conn.Close(websocket.StatusPolicyViolation, "connection too slow to keep up with messages")
 		},
+	}
+
+	if !s.game.addPlayer(c.player) {
+		conn.Close(websocket.StatusTryAgainLater, "game is full")
+		return ctx.Err()
 	}
 
 	s.addClient(c)
