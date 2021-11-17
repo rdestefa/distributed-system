@@ -4,6 +4,8 @@ import "math"
 
 const EPS float64 = 1e-8
 
+var ZERO_VECTOR = Vector{X: 0, Y: 0}
+
 type Vector struct {
 	X float64
 	Y float64
@@ -20,6 +22,13 @@ func (v Vector) sub(other Vector) Vector {
 	return Vector{
 		X: v.X - other.X,
 		Y: v.Y - other.Y,
+	}
+}
+
+func (v Vector) mul(scalar float64) Vector {
+	return Vector{
+		X: v.X * scalar,
+		Y: v.Y * scalar,
 	}
 }
 
