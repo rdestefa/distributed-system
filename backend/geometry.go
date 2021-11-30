@@ -1,6 +1,8 @@
 package main
 
-import "math"
+import (
+	"math"
+)
 
 const EPS float64 = 1e-8
 
@@ -49,17 +51,25 @@ func newpolygon(points []Vector) *polygon {
 	closed := points[0].almostEqual(points[len(points)-1])
 
 	poly := &polygon{
-		Points: make([]Vector, len(points)),
+		Points: make([]Vector, 0, len(points)),
 		Edges:  make([][2]Vector, 0, len(points)),
 	}
 
-	copy(poly.Points, points)
+	for i, point := range points {
+		if i == 0 || !point.almostEqual(points[i-1]) {
+			poly.Points = append(poly.Points, point)
+		}
+	}
 
 	if !closed {
 		poly.Points = append(poly.Points, poly.Points[len(poly.Points)-1])
 	}
 
-	for i := 1; i <= len(poly.Points); i++ {
+	if len(poly.Points) <= 3 {
+		return nil
+	}
+
+	for i := 1; i < len(poly.Points); i++ {
 		poly.Edges = append(poly.Edges, [2]Vector{poly.Points[i-1], poly.Points[i]})
 	}
 
@@ -81,11 +91,14 @@ type Navmesh []*polygon
 func newNavmesh(meshPoints [][][2]float64) *Navmesh {
 	nav := make(Navmesh, 0, len(meshPoints))
 	for _, polyPoints := range meshPoints {
-		points := make([]Vector, len(polyPoints))
+		points := make([]Vector, 0, len(polyPoints))
 		for _, point := range polyPoints {
 			points = append(points, Vector{X: point[0], Y: point[1]})
 		}
-		nav = append(nav, newpolygon(points))
+		poly := newpolygon(points)
+		if poly != nil {
+			nav = append(nav, poly)
+		}
 	}
 	return &nav
 }

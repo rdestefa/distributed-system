@@ -78,7 +78,7 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 		return
 	}
-	defer c.Close(websocket.StatusInternalError, "")
+	// defer c.Close(websocket.StatusInternalError, "")
 
 	err = s.connect(r.Context(), c, r.URL.Query().Get("name"))
 	if errors.Is(err, context.Canceled) {
@@ -108,14 +108,17 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 
 	s.addClient(c)
 
-	go s.clientWriter(c, ctx)
-	go s.clientReader(c, ctx)
+	socketCtx := context.Background()
+
+	go s.clientWriter(c, socketCtx)
+	go s.clientReader(c, socketCtx)
 
 	return nil
 }
 
 func (s *server) clientReader(c *client, ctx context.Context) {
 	defer func() {
+		fmt.Println("clientReader is closing", c)
 		go s.deleteClient(c)
 		// TODO: check if we just want a normal closure or what
 		c.conn.Close(websocket.StatusNormalClosure, "")
@@ -124,7 +127,8 @@ func (s *server) clientReader(c *client, ctx context.Context) {
 	// c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	// c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
-		var v interface{}
+		// var v interface{}
+		var v Action
 		err := wsjson.Read(ctx, c.conn, &v)
 		if err != nil {
 			if websocket.CloseStatus(err) == websocket.StatusGoingAway || websocket.CloseStatus(err) == websocket.StatusAbnormalClosure {
@@ -134,18 +138,21 @@ func (s *server) clientReader(c *client, ctx context.Context) {
 			break
 		}
 
-		switch v.(type) {
-		case Action:
-			s.game.actions <- v.(Action)
-		default:
-			fmt.Printf("Don't know what to do with message: %v", v)
-		}
+		s.game.actions <- v
+
+		// switch v := v.(type) {
+		// case Action:
+		// 	s.game.actions <- v
+		// default:
+		// 	fmt.Println("Don't know what to do with message:", v)
+		// }
 	}
 }
 
 func (s *server) clientWriter(c *client, ctx context.Context) {
 	// ticker := time.NewTicker(pingPeriod)
 	defer func() {
+		fmt.Println("clientWriter is closing", c)
 		// ticker.Stop()
 		// TODO: check if we just want a normal closure or what
 		c.conn.Close(websocket.StatusNormalClosure, "")
@@ -156,9 +163,11 @@ func (s *server) clientWriter(c *client, ctx context.Context) {
 		case msg := <-c.out:
 			err := writeTimeout(ctx, time.Second*5, c.conn, msg)
 			if err != nil {
+				fmt.Println("Error in writeTimeout from clientWriter", err)
 				return
 			}
 		case <-ctx.Done():
+			fmt.Println("ctx is Done", c)
 			return
 		}
 	}

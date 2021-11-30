@@ -2,15 +2,21 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/rand"
 	"sync"
 
 	"github.com/google/uuid"
+
+	_ "embed"
 )
 
 // Enum type to describe the state of the game.
 type GameState int
+
+// NullUUID is struct with []byte providing JSON marshalling
+type UUID uuid.NullUUID
 
 const (
 	LOBBY = iota
@@ -108,11 +114,21 @@ func (g *Game) watchActions() {
 	for a := range g.actions {
 		// TODO: check if player exists
 
+		fmt.Println("watchActions", a)
+
 		if a.Position != nil {
 			// TODO: check if move is valid
+			fmt.Println("watchActions a.Position", a.Position)
+			fmt.Println("watchActions a.Direction", a.Direction)
+
 			p := g.Players[a.PlayerId]
-			p.Position = *a.Position
-			p.Direction = *a.Direction
+
+			if p != nil {
+				p.Position = *a.Position
+				p.Direction = *a.Direction
+			} else {
+				fmt.Println("Error on new position, player not found: ", a.PlayerId)
+			}
 		}
 
 		if a.Kill != nil {
@@ -143,6 +159,7 @@ func (g *Game) start() {
 			player.IsImpostor = true
 		}
 
+		i += 1
 		startAngle += (2.0 * math.Pi) / float64(len(g.Players))
 		player.Position = DEFAULT_START_CENTER.add(Vector{X: math.Cos(startAngle), Y: math.Sin(startAngle)}.mul(DEFAULT_START_RADIUS))
 	}

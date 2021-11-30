@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const ADDRESS = "0.0.0.0:9000"
+const ADDRESS = "0.0.0.0:10000"
 
 func main() {
 	err := run()
@@ -25,7 +25,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Listening on http://%v", l.Addr())
+	fmt.Printf("Listening on http://%v\n", l.Addr())
 
 	s := newServer()
 	hs := &http.Server{
