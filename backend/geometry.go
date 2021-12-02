@@ -88,14 +88,10 @@ func (poly *polygon) inside(point Vector) bool {
 
 type Navmesh []*polygon
 
-func newNavmesh(meshPoints [][][2]float64) *Navmesh {
+func newNavmesh(meshPoints [][]Vector) *Navmesh {
 	nav := make(Navmesh, 0, len(meshPoints))
 	for _, polyPoints := range meshPoints {
-		points := make([]Vector, 0, len(polyPoints))
-		for _, point := range polyPoints {
-			points = append(points, Vector{X: point[0], Y: point[1]})
-		}
-		poly := newpolygon(points)
+		poly := newpolygon(polyPoints)
 		if poly != nil {
 			nav = append(nav, poly)
 		}

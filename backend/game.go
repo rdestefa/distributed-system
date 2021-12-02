@@ -57,7 +57,7 @@ type Action struct {
 // The following directive loads the file from disk or embeds into the binary when compiling
 //go:embed navmesh.json
 var DEFAULT_NAVMESH_BYTES []byte
-var DEFAULT_NAVMESH_POINTS [][][2]float64
+var DEFAULT_NAVMESH_POINTS [][]Vector
 var DEFAULT_NAVMESH Navmesh
 var DEFAULT_LIMITS Vector = Vector{X: 1531, Y: 1053}
 var DEFAULT_START_CENTER = Vector{X: 818, Y: 294}
