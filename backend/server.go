@@ -73,7 +73,13 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // subscribeHandler accepts the WebSocket connection and then subscribes
 // it to all future messages.
 func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
-	c, err := websocket.Accept(w, r, nil)
+	// Using OriginPatterns is probably safer than ignoring verification.
+	options := &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+		//OriginPatterns: []string{"localhost:3000"},
+	}
+
+	c, err := websocket.Accept(w, r, options)
 	if err != nil {
 		fmt.Println(err)
 		return

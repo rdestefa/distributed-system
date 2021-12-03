@@ -1,8 +1,6 @@
 import React from 'react';
-import Game from './Game';
+import Login from './Login';
 
 export default function App() {
-  return (
-    <Game />
-  );
+  return <Login />;
 }
