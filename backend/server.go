@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"log"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,70 +16,78 @@ import (
 )
 
 type server struct {
-	game        *Game
-	clients     map[string]*client
-	clientsMu   sync.Mutex
+	clients      map[string]*client
+	staleClients map[string]*client
+	nextGame     *game
+
+	mu          sync.Mutex
+	inbox       chan *serverUpdate
 	serveMux    http.ServeMux
-	ticker      *time.Ticker
 	rateLimiter *rate.Limiter
 }
 
 type client struct {
-	player      *Player
-	lastMessage time.Time
-	out         chan []byte
-	conn        *websocket.Conn
+	player       *Player
+	game         *game
+	out          chan message
+	conn         *websocket.Conn
+	disconnected bool
 }
 
+type serverUpdate struct {
+	gameState *GameState
+	playerIds []string
+	endgame   bool
+}
+
+type message struct {
+	content []byte
+	last    bool
+}
+
+// newServer initializes a new http server for the game backend
 func newServer() *server {
+	inbox := make(chan *serverUpdate)
 	s := &server{
-		game:        newGame(),
 		clients:     make(map[string]*client),
-		ticker:      time.NewTicker(5000 * time.Millisecond),
+		nextGame:    newGame(inbox),
 		rateLimiter: rate.NewLimiter(rate.Every(time.Millisecond*100), 8),
+		inbox:       inbox,
 	}
 	s.serveMux.Handle("/", http.FileServer(http.Dir(".")))
 	s.serveMux.HandleFunc("/connect", s.connectHandler)
 
-	go func() {
-		for t := range s.ticker.C {
-			// TODO: Replace hardcoded logic by a channel from gamewatcher to server
-			if len(s.game.Players) < 10 {
-				// TODO: Replace with a proper status message
-				s.broadcast([]byte(t.String() + ": " + strconv.Itoa(len(s.game.Players)) + " players in lobby"))
-			} else if len(s.game.Players) == 10 && s.game.State == LOBBY {
-				// TODO: Replace with a proper status message
-				s.broadcast([]byte("Game is starting"))
-				s.game.start()
-			} else {
-				// TODO: Replace with proper json
-				msg, err := json.Marshal(s.game)
-				if err != nil {
-					s.broadcast([]byte("Error marshalling game state"))
-				}
-				s.broadcast(msg)
-			}
-		}
-	}()
+	go s.watch()
 
 	return s
 }
 
+// ServeHTTP implements the required interface for an http server
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.serveMux.ServeHTTP(w, r)
 }
 
-// subscribeHandler accepts the WebSocket connection and then subscribes
-// it to all future messages.
+// connectHandler accepts a WebSocket connection HTTP request
 func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
-	// defer c.Close(websocket.StatusInternalError, "")
 
-	err = s.connect(r.Context(), c, r.URL.Query().Get("name"))
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		name = r.Header.Get("name")
+	}
+
+	playerId := r.URL.Query().Get("id")
+	if playerId == "" {
+		playerId = r.Header.Get("id")
+	}
+	// TODO: remove debug print
+	log.Println(playerId)
+
+	err = s.connect(r.Context(), c, name)
 	if errors.Is(err, context.Canceled) {
 		return
 	}
@@ -89,71 +96,84 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return
 	}
 }
 
+// connect establishes a writer and a reader for a websocket connection
 func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string) error {
+	// TODO: handle client is reconnecting
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	c := &client{
 		player: newPlayer(name),
-		out:    make(chan []byte, 16),
+		out:    make(chan message),
 		conn:   conn,
 	}
 
-	if !s.game.addPlayer(c.player) {
-		conn.Close(websocket.StatusTryAgainLater, "Game is full")
-		return ctx.Err()
+	// add new player
+	if err := s.nextGame.addPlayer(c.player); err != nil {
+		close(c.out)
+		c.conn.Close(websocket.StatusTryAgainLater, err.Error())
+		return err
 	}
 
-	s.addClient(c)
+	c.game = s.nextGame
+	s.clients[c.player.PlayerId] = c
+
+	// inform client of its id
+	if err := writeTimeout(ctx, 1*time.Second, conn, []byte(c.player.PlayerId)); err != nil {
+		close(c.out)
+		delete(s.clients, c.player.PlayerId)
+		c.conn.Close(websocket.StatusPolicyViolation, err.Error())
+		return err
+	}
+
+	if s.nextGame.readyToStart() {
+		s.nextGame.start()
+		s.nextGame = newGame(s.inbox)
+	}
 
 	socketCtx := context.Background()
 
-	go s.clientWriter(c, socketCtx)
-	go s.clientReader(c, socketCtx)
+	go s.clientWriter(socketCtx, c)
+	go s.clientReader(socketCtx, c)
 
 	return nil
 }
 
-func (s *server) clientReader(c *client, ctx context.Context) {
+// clientReader loops reading messages from a client
+func (s *server) clientReader(ctx context.Context, c *client) {
 	defer func() {
-		fmt.Println("clientReader is closing", c)
-		go s.deleteClient(c)
+		log.Println("clientReader is closing", c.player.PlayerId)
+		go s.deleteClient(c, false)
 		// TODO: check if we just want a normal closure or what
 		c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
-	// c.conn.SetReadLimit(maxMessageSize)
-	// c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	// c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+
 	for {
-		// var v interface{}
-		var v Action
-		err := wsjson.Read(ctx, c.conn, &v)
-		if err != nil {
-			if websocket.CloseStatus(err) == websocket.StatusGoingAway || websocket.CloseStatus(err) == websocket.StatusAbnormalClosure {
-				fmt.Printf("Error: %v\n", err)
-			}
-
-			break
+		a, err := readTimeout(ctx, 1*time.Second, c.conn)
+		if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
+			websocket.CloseStatus(err) == websocket.StatusGoingAway {
+			return
 		}
-
-		s.game.actions <- v
-
-		// switch v := v.(type) {
-		// case Action:
-		// 	s.game.actions <- v
-		// default:
-		// 	fmt.Println("Don't know what to do with message:", v)
-		// }
+		if err != nil {
+			log.Println("clientReader:", err.Error())
+			return
+		}
+		c.game.inbox <- &gameUpdate{
+			action: a,
+		}
 	}
 }
 
-func (s *server) clientWriter(c *client, ctx context.Context) {
-	// ticker := time.NewTicker(pingPeriod)
+// clientWriter loops writing messages to a client
+func (s *server) clientWriter(ctx context.Context, c *client) {
 	defer func() {
-		fmt.Println("clientWriter is closing", c)
-		// ticker.Stop()
+		log.Println("clientWriter is closing", c.player.PlayerId)
 		// TODO: check if we just want a normal closure or what
 		c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
@@ -161,78 +181,106 @@ func (s *server) clientWriter(c *client, ctx context.Context) {
 	for {
 		select {
 		case msg := <-c.out:
-			err := writeTimeout(ctx, time.Second*5, c.conn, msg)
+			err := writeTimeout(ctx, 1*time.Second, c.conn, msg.content)
+			if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
+				websocket.CloseStatus(err) == websocket.StatusGoingAway {
+				return
+			}
 			if err != nil {
-				fmt.Println("Error in writeTimeout from clientWriter", err)
+				log.Println("clientWriter:", err)
+				return
+			}
+			if msg.last {
+				log.Println("Last message", c.player)
+				go s.deleteClient(c, false)
 				return
 			}
 		case <-ctx.Done():
-			fmt.Println("ctx is Done", c)
+			log.Println("ctx is Done", c)
 			return
 		}
 	}
-
-	// for {
-	// 	select {
-	// 	case message, ok := <-c.out:
-	// 		c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-	// 		if !ok {
-	// 			// Out channel closed
-	// 			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-	// 			return
-	// 		}
-
-	// 		w, err := c.conn.NextWriter(websocket.TextMessage)
-	// 		if err != nil {
-	// 			return
-	// 		}
-	// 		w.Write(message)
-
-	// 		// Add queued chat messages to the current websocket message.
-	// 		n := len(c.send)
-	// 		for i := 0; i < n; i++ {
-	// 			w.Write(newline)
-	// 			w.Write(<-c.send)
-	// 		}
-
-	// 		if err := w.Close(); err != nil {
-	// 			return
-	// 		}
-	// 	case <-ticker.C:
-	// 		c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-	// 		if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-	// 			return
-	// 		}
-	// 	}
-	// }
 }
 
-func (s *server) broadcast(msg []byte) {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
+// watch listens to server updates from other threads and broadcasts them to appropriate players
+func (s *server) watch() {
+	for u := range s.inbox {
+		if u.gameState != nil {
+			content, err := json.Marshal(u.gameState)
+			if err != nil {
+				log.Println("Watch failed to marshall game state")
+				continue
+			}
+			s.broadcastMessage(message{content: content, last: u.endgame}, u.playerIds)
+		}
 
-	s.rateLimiter.Wait(context.Background())
-
-	for _, client := range s.clients {
-		select {
-		case client.out <- msg:
-		default:
-			client.conn.Close(websocket.StatusPolicyViolation, "Connection too slow to keep up with messages")
-			go s.deleteClient(client)
+		if u.endgame {
+			s.endGameForPlayers(u.playerIds)
 		}
 	}
 }
 
-func (s *server) addClient(c *client) {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
+// endGame
+func (s *server) endGameForPlayers(playerIds []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	s.clients[c.player.PlayerId] = c
+	var game *game = nil
+
+	for _, playerId := range playerIds {
+		if client, ok := s.clients[playerId]; ok {
+			game = client.game
+			client.game = nil
+			go s.deleteClient(client, true)
+		} else {
+			log.Println("End game for players: client", playerId, "not found")
+		}
+	}
+
+	if game != nil {
+		game.inbox <- &gameUpdate{quit: true}
+	}
 }
 
-func (s *server) deleteClient(c *client) {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
+// broadcastMessage sends a message the specified clients
+func (s *server) broadcastMessage(msg message, playerIds []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.rateLimiter.Wait(context.Background())
+
+	for _, playerId := range playerIds {
+		if client, ok := s.clients[playerId]; ok {
+			select {
+			case client.out <- msg:
+			default:
+				client.conn.Close(websocket.StatusPolicyViolation, "Connection too slow to keep up with messages")
+				go s.deleteClient(client, false)
+			}
+		} else {
+			log.Println("Broadcast: client", playerId, "not found")
+		}
+	}
+}
+
+// deleteClient closes a client's write channel and removes it from the server state
+func (s *server) deleteClient(c *client, permanent bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	c.disconnected = true
+
+	// Remove client from game
+	if c.game != nil {
+		c.game.inbox <- &gameUpdate{
+			disconnect: &c.player.PlayerId,
+		}
+	}
+
+	if !permanent {
+		// TODO: take care of client being able to reconnect
+		//       spun up a thread to wait for reconnection
+	}
 
 	if _, ok := s.clients[c.player.PlayerId]; ok {
 		delete(s.clients, c.player.PlayerId)
@@ -240,6 +288,17 @@ func (s *server) deleteClient(c *client) {
 	}
 }
 
+// writeTimeout reads a message from a websocket with a timeout
+func readTimeout(ctx context.Context, timeout time.Duration, conn *websocket.Conn) (*Action, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var a *Action
+	err := wsjson.Read(ctx, conn, &a)
+	return a, err
+}
+
+// writeTimeout writes a message to a websocket with a timeout
 func writeTimeout(ctx context.Context, timeout time.Duration, conn *websocket.Conn, msg []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
