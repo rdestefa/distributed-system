@@ -1,123 +1,245 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {throttle} from 'lodash';
+//import {NavMesh} from 'navmesh';
 import Stage from './Stage';
+import {
+  IGameState,
+  IPlayerState,
+  initialGameState,
+  keyMap,
+  status,
+} from './gameState';
 import {loadImage} from './Util';
 import background from './background.png';
-import {initialGameState, status} from './gameState';
+import navmesh from './navmesh.json';
 
 interface GameProps {
   username: string;
 }
 
-const LENGTH_PER_UPDATE = 5;
+const movementSpeed: number = 5;
+const keyMappings = keyMap;
 
-function updatePosition(startX, startY, newX, newY) {
-  const dx = newX - startX;
-  const dy = newY - startY;
-  let theta = Math.atan2(dy, dx);
-  theta *= 180 / Math.PI;
+function determineDirection() {
+  let [dirX, dirY]: number[] = [0, 0];
 
-  if (theta < 0) theta = 360 + theta;
+  Object.entries(keyMappings).forEach(([key, val]) => {
+    if (val.pressed) {
+      dirX += val.dir[0];
+      dirY += val.dir[1];
+    }
+  });
 
-  return [
-    startX + LENGTH_PER_UPDATE * Math.cos(theta),
-    startY + LENGTH_PER_UPDATE * Math.sin(theta),
-  ];
+  // Make sure keystrokes for the same direction aren't registered twice.
+  dirX = Math.min(Math.max(dirX, -90), 90);
+  dirY = Math.min(Math.max(dirY, -90), 90);
+
+  if (!dirX && !dirY) {
+    return [0, 0];
+  }
+
+  const theta: number = Math.atan2(dirY, dirX);
+  let [x, y]: number[] = [Math.cos(theta), Math.sin(theta)];
+
+  // Treat very small numbers as zero.
+  if (x < 0.00001 && x > -0.00001) x = 0;
+  if (y < 0.00001 && y > -0.00001) y = 0;
+
+  return [x, y];
 }
 
 const Game = (props: GameProps) => {
   const url = 'ws://localhost:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
-  const [gameStatus, setGameStatus] = useState(status.LOADING);
-  //const [playerCount, setPlayerCount] = useState(null);
-  /* Do something crazy like this for now
-  const startAngle: number = 0.7853981633974483; //(Math.floor(Math.random() * 8) / 8) * 2 * Math.PI;
-  const startRadius: number = 70;
-  const startX: number = 818 + startRadius * Math.cos(startAngle);
-  const startY: number = 294 + startRadius * Math.sin(startAngle);*/
+  const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
+  let currDir: number[] = [0, 0];
+  let lastServerUpdate: number = new Date().valueOf();
 
-  const initialGameStateWithLocation = {
-    ...initialGameState,
-    thisPlayer: {...initialGameState.thisPlayer, position: [startX, startY]},
-  };
+  /*const mapMesh = useMemo<NavMesh>(() => {
+    return new NavMesh(navmesh);
+  }, []);*/
 
-  const [state, setState] = useState(initialGameStateWithLocation);
+  const constructInitialGameState = useCallback(
+    (gameState: Record<string, any>) => {
+      let initialState: IGameState = {
+        ...initialGameState,
+        gameId: gameState.GameId,
+      };
 
-  useEffect(() => {
-    websocket.current = new WebSocket(`${url}?name=${props.username}`);
-    websocket.current.onopen = () => {
-      console.log(`Connected to ${url}`);
-      setGameStatus(status.LOBBY);
-    };
+      Object.entries(gameState.Players).forEach(
+        ([key, val]: (string | any)[]) => {
+          const currPlayer: IPlayerState = {
+            playerId: key,
+            playerName: val.Name,
+            color: '#0000FF',
+            isAlive: val.IsAlive,
+            isImpostor: val.IsImpostor,
+            position: [val.Position.X, val.Position.Y],
+          };
 
-    websocket.current.onmessage = (message) => {
-      console.log(message.data);
-
-      if (message.data?.State === 1) {
-        if (gameStatus !== status.PLAYING) {
-          setGameStatus(status.PLAYING);
-        }
-
-        const otherPlayers: Record<string, any> = {};
-        for (const [key, value] of message.data?.Players) {
-          if (value?.Name === props.username) {
-            setState({
-              ...state,
-              thisPlayer: {
-                ...state.thisPlayer,
-                position: [value?.Position?.X, value?.Position?.Y],
-              },
-            });
+          if (val.Name === props.username) {
+            initialState = {
+              ...initialState,
+              thisPlayer: currPlayer,
+            };
           } else {
-            otherPlayers[key] = value;
+            initialState.otherPlayers[key] = currPlayer;
           }
         }
+      );
 
-        setState({...state, otherPlayers: otherPlayers});
+      return initialState;
+    },
+    [props.username]
+  );
+
+  const [state, setState] = useState<IGameState>(initialGameState);
+
+  const updateGameState = useCallback(
+    (gameState: Record<string, any>) => {
+      if (gameState.GameId === state.gameId) {
+        const newState: IGameState = {...state};
+
+        Object.entries(gameState.Players).forEach(
+          ([key, val]: (string | any)[]) => {
+            if (val.Name === props.username) {
+              newState.thisPlayer = {
+                ...newState.thisPlayer,
+                isAlive: val.IsAlive,
+                position: [val.Position.X, val.Position.Y],
+              };
+            } else {
+              newState.otherPlayers[key] = {
+                ...newState.otherPlayers[key],
+                isAlive: val.IsAlive,
+                position: [val.Position.X, val.Position.Y],
+              };
+            }
+          }
+        );
+
+        return newState;
       }
-    };
 
-    websocket.current.onerror = () => {
-      setGameStatus(status.ERROR);
-    };
+      return state;
+    },
+    [props.username, state]
+  );
+
+  function updatePosition(dirX: number, dirY: number) {
+    const [currX, currY]: number[] = state.thisPlayer.position;
+
+    const newX = currX + movementSpeed * dirX;
+    const newY = currY + movementSpeed * dirY;
+
+    // Should we update the server before or after updating the client?
+    if (
+      [dirX, dirY] !== currDir ||
+      new Date().valueOf() - lastServerUpdate > 500
+    ) {
+      currDir = [dirX, dirY];
+
+      const message: Record<string, number[] | string | null> = {
+        PlayerId: state.thisPlayer.playerId,
+        Position: [newX, newY],
+        Direction: currDir,
+        Kill: null,
+        Task: null,
+      };
+
+      websocket?.current?.send(JSON.stringify(message));
+    }
+
+    setState({
+      ...state,
+      thisPlayer: {...state.thisPlayer, position: [newX, newY]},
+    });
+  }
+
+  // Establish WebSocket connection.
+  useEffect(() => {
+    if (!websocket.current) {
+      websocket.current = new WebSocket(`${url}?name=${props.username}`);
+    }
   }, [props.username]);
 
-  // Shouldn't close connection on every re-render, so use second useEffect.
+  // Set up event handlers separately so state changes are properly observed.
+  useEffect(() => {
+    if (websocket.current) {
+      websocket.current.onopen = () => {
+        console.log(`Connected to ${url}`);
+        setGameStatus(status.LOBBY);
+      };
+
+      websocket.current.onmessage = (message) => {
+        const currState = JSON.parse(message.data);
+
+        if (currState?.State === 1) {
+          if (gameStatus !== status.PLAYING) {
+            setState(constructInitialGameState(currState));
+            setGameStatus(status.PLAYING);
+          } else {
+            setState(updateGameState(currState));
+          }
+        }
+      };
+
+      websocket.current.onerror = () => {
+        setGameStatus(status.ERROR);
+      };
+    }
+  }, [gameStatus, constructInitialGameState, updateGameState]);
+
+  // Shouldn't close connection on every re-render, so use separate useEffect.
   useEffect(() => {
     const currentWebsocket = websocket.current;
 
-    return () => {
-      currentWebsocket?.close();
-    };
+    return () => currentWebsocket?.close();
   }, [websocket]);
 
+  // Set up timer to check for movement.
   useEffect(() => {
     const interval = setInterval(() => {
-      const otherPlayers = state?.otherPlayers;
-      for (const [key, value] in otherPlayers) {
-        const coords = updatePosition(
-          value?.Position?.X,
-          value?.Position.Y,
-          value?.Direction?.X,
-          value?.Direction?.Y
-        );
-        otherPlayers[key].Position = coords;
-      }
-      setState({
-        ...state,
-        otherPlayers: otherPlayers,
-      });
-    }, 50);
+      const [dirX, dirY]: number[] = determineDirection();
 
-    return () => {
-      clearInterval(interval);
-    };
+      if (dirX || dirY) {
+        updatePosition(dirX, dirY);
+      }
+    }, 25);
+
+    return () => clearInterval(interval);
   });
+
+  const handleKeyDown = useCallback(
+    // Throttle events to improve performance.
+    throttle((event: React.KeyboardEvent<HTMLCanvasElement>) => {
+      if (event.code in keyMappings) {
+        keyMappings[event.code].pressed = true;
+      }
+    }, 100),
+    []
+  );
+
+  const handleKeyUp = useCallback(
+    (event: React.KeyboardEvent<HTMLCanvasElement>) => {
+      // Don't execute any more pending throttled KeyDown events.
+      handleKeyDown.cancel();
+
+      if (event.code in keyMappings) {
+        keyMappings[event.code].pressed = false;
+      }
+    },
+    [handleKeyDown]
+  );
+
+  // Load background image for map.
+  const backgroundImage = useMemo<Promise<HTMLImageElement>>(() => {
+    return loadImage(background);
+  }, []);
 
   return (
     <>
-      {gameStatus === status.LOADING && (
-        <h1>Loading...{websocket.current?.readyState}</h1>
-      )}
+      {gameStatus === status.LOADING && <h1>Loading...</h1>}
       {gameStatus === status.LOBBY && <h1>Waiting for game to start...</h1>}
       {gameStatus === status.PLAYING && (
         <div style={{overflow: 'hidden', minWidth: '100%', minHeight: '100%'}}>
@@ -126,11 +248,14 @@ const Game = (props: GameProps) => {
             maxHeight={720}
             stageWidth={1531}
             stageHeight={1053}
-            stageBackground={loadImage(background)}
+            stageBackground={backgroundImage}
             stageCenter={state.thisPlayer.position as [number, number]}
             windowWidth={320}
             windowHeight={180}
             backgroundColor={'black'}
+            gameState={state as IGameState}
+            keyDownHandler={handleKeyDown}
+            keyUpHandler={handleKeyUp}
           />
         </div>
       )}
