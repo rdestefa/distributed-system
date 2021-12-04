@@ -110,14 +110,17 @@ class TestClient:
             print('close', self.id, close_status_code, close_msg)
 
 # %%
-N = 10
-clients = [TestClient(f"test {i}", verbose=(i==0)) for i in range(N)]
+N = 9
+# clients = [TestClient(f"test {i}", verbose=(i==0)) for i in range(N)]
+clients = [TestClient(f"test {i}", verbose=False) for i in range(N)]
 print(len(clients), 'clients')
 for client in clients:
     client.start()
-    time.sleep(0.1)
-time.sleep(3)
-for i, client in reversed(list(enumerate(clients))):
-    print('Stopping client', client.id)
-    client.stop()
-    time.sleep(0.001 * i)
+    # time.sleep(0.1)
+while True:
+    time.sleep(1)
+# time.sleep(3)
+# for i, client in reversed(list(enumerate(clients))):
+#     print('Stopping client', client.id)
+#     client.stop()
+#     time.sleep(0.001 * i)

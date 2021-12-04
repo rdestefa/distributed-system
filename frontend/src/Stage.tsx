@@ -1,5 +1,6 @@
 import React from 'react';
-import {IGameState} from './gameState';
+import { IGameState } from './gameState';
+
 interface StageProps {
   maxWidth: number;
   maxHeight: number;
@@ -97,11 +98,11 @@ const Stage = ({
 
             context.fillRect(
               canvasWidth / 2 +
-                (val.position[0] - stageX) * (canvasWidth / windowWidth) -
-                playerWidth / 2,
+              (val.position[0] - stageX) * (canvasWidth / windowWidth) -
+              playerWidth / 2,
               canvasHeight / 2 +
-                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
-                playerHeight / 2,
+              (val.position[1] - stageY) * (canvasHeight / windowHeight) -
+              playerHeight / 2,
               playerWidth,
               playerHeight
             );
@@ -140,7 +141,7 @@ const Stage = ({
       ref={canvasRef}
       height={canvasHeight}
       width={canvasWidth}
-      style={{display: 'block', margin: 'auto'}}
+      style={{ display: 'block', margin: 'auto' }}
       onKeyDown={keyDownHandler}
       onKeyUp={keyUpHandler}
       tabIndex={0}

@@ -37,6 +37,7 @@ type GameState struct {
 type Player struct {
 	PlayerId    string
 	Name        string
+	Color       string
 	IsAlive     bool
 	IsImpostor  bool
 	IsConnected bool
@@ -80,6 +81,7 @@ var (
 	NAVMESH        Navmesh
 	LIMITS         = Vector{X: 1531, Y: 1053}
 	START_CENTER   = Vector{X: 818, Y: 294}
+	COLORS         = []string{"D71E22", "1D3CE9", "1B913E", "FF63D4", "FF8D1C", "FFFF67", "4A565E", "E9F7FF", "783DD2", "80582D"}
 )
 
 const (
@@ -119,6 +121,7 @@ func newPlayer(name string) *Player {
 	p := &Player{
 		PlayerId:    uuid.NewString(),
 		Name:        name,
+		Color:       "",
 		IsAlive:     true,
 		IsImpostor:  false,
 		IsConnected: true,
@@ -175,8 +178,6 @@ func (g *game) sendUpdate() bool {
 
 	endgame := g.inEndOfGame()
 
-	InfoLogger.Println("Send update", endgame)
-
 	// get a list of connected player ids in this game
 	playerIds := make([]string, 0, len(g.Players))
 	for playerId, player := range g.Players {
@@ -193,6 +194,9 @@ func (g *game) sendUpdate() bool {
 	if endgame {
 		u.endgame = g
 	}
+
+	DebugLogger.Println("Send update", u)
+
 	g.toserver <- u
 
 	return endgame
@@ -204,11 +208,11 @@ func (g *game) performAction(a *Action) {
 
 	// TODO: check if id is correct
 
-	InfoLogger.Println("Perform action:", a)
+	DebugLogger.Println("Perform action:", a)
 
 	if a.Position != nil {
-		InfoLogger.Println("Action position: a.Position", a.Position)
-		InfoLogger.Println("Action direction: a.Direction", a.Direction)
+		DebugLogger.Println("Action position: a.Position", a.Position)
+		DebugLogger.Println("Action direction: a.Direction", a.Direction)
 
 		if g.Status != IN_PROGRESS {
 			WarnLogger.Println("performAction detected attempt to move when not in progress:", a.PlayerId)
@@ -281,6 +285,8 @@ func (g *game) disconnectPlayer(playerId string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	// TODO: if game is not running, fully remove player
+
 	InfoLogger.Println("Disconnect player:", playerId)
 
 	p := g.Players[playerId]
@@ -342,11 +348,14 @@ func (g *game) start() {
 			player.IsImpostor = true
 		}
 
-		i += 1
 		startAngle += (2.0 * math.Pi) / float64(len(g.Players))
 		player.Position = START_CENTER.add(Vector{X: math.Cos(startAngle), Y: math.Sin(startAngle)}.mul(START_RADIUS))
 
+		player.Color = "#" + COLORS[i]
+
 		player.LastHeard = Time{time.Now()}
+
+		i += 1
 	}
 
 	// signal that game has started

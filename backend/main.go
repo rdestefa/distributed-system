@@ -17,8 +17,9 @@ const LOGFILENAME = "backend.log"
 const ADDRESS = "0.0.0.0:10000"
 
 var (
-	WarnLogger  *log.Logger
+	DebugLogger *log.Logger
 	InfoLogger  *log.Logger
+	WarnLogger  *log.Logger
 	ErrorLogger *log.Logger
 )
 
@@ -28,11 +29,15 @@ func init() {
 		logLevel = "error"
 	}
 
+	DebugLogger = log.New(ioutil.Discard, "", 0)
 	InfoLogger = log.New(ioutil.Discard, "", 0)
 	WarnLogger = log.New(ioutil.Discard, "", 0)
 	ErrorLogger = log.New(ioutil.Discard, "", 0)
 
 	switch logLevel {
+	case "debug":
+		DebugLogger = log.New(os.Stderr, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
+		fallthrough
 	case "info":
 		InfoLogger = log.New(os.Stderr, "[INFO]  ", log.Ldate|log.Ltime|log.Lshortfile)
 		fallthrough

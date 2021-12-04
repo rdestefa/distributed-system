@@ -1,5 +1,5 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {throttle} from 'lodash';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { throttle } from 'lodash';
 //import {NavMesh} from 'navmesh';
 import Stage from './Stage';
 import {
@@ -9,7 +9,7 @@ import {
   keyMap,
   status,
 } from './gameState';
-import {loadImage} from './Util';
+import { loadImage } from './Util';
 import background from './background.png';
 import navmesh from './navmesh.json';
 
@@ -51,6 +51,7 @@ function determineDirection() {
 const Game = (props: GameProps) => {
   const url = 'ws://localhost:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
+  const [thisPlayerId, setThisPlayerId] = useState<string>("");
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
   let currDir: number[] = [0, 0];
   let lastServerUpdate: number = new Date().valueOf();
@@ -69,15 +70,15 @@ const Game = (props: GameProps) => {
       Object.entries(gameState.Players).forEach(
         ([key, val]: (string | any)[]) => {
           const currPlayer: IPlayerState = {
-            playerId: key,
+            playerId: val.PlayerId,
             playerName: val.Name,
-            color: '#0000FF',
+            color: val.Color,
             isAlive: val.IsAlive,
             isImpostor: val.IsImpostor,
             position: [val.Position.X, val.Position.Y],
           };
 
-          if (val.Name === props.username) {
+          if (key === thisPlayerId) {
             initialState = {
               ...initialState,
               thisPlayer: currPlayer,
@@ -90,7 +91,7 @@ const Game = (props: GameProps) => {
 
       return initialState;
     },
-    [props.username]
+    [thisPlayerId]
   );
 
   const [state, setState] = useState<IGameState>(initialGameState);
@@ -98,11 +99,11 @@ const Game = (props: GameProps) => {
   const updateGameState = useCallback(
     (gameState: Record<string, any>) => {
       if (gameState.GameId === state.gameId) {
-        const newState: IGameState = {...state};
+        const newState: IGameState = { ...state };
 
         Object.entries(gameState.Players).forEach(
           ([key, val]: (string | any)[]) => {
-            if (val.Name === props.username) {
+            if (key === thisPlayerId) {
               newState.thisPlayer = {
                 ...newState.thisPlayer,
                 isAlive: val.IsAlive,
@@ -123,7 +124,7 @@ const Game = (props: GameProps) => {
 
       return state;
     },
-    [props.username, state]
+    [thisPlayerId, state]
   );
 
   function updatePosition(dirX: number, dirY: number) {
@@ -132,20 +133,23 @@ const Game = (props: GameProps) => {
     const newX = currX + movementSpeed * dirX;
     const newY = currY + movementSpeed * dirY;
 
-    // Should we update the server before or after updating the client?
+    // TODO: should we update the server before or after updating the client?
     if (
       [dirX, dirY] !== currDir ||
-      new Date().valueOf() - lastServerUpdate > 500
+      new Date().valueOf() - lastServerUpdate > 100
     ) {
       currDir = [dirX, dirY];
 
-      const message: Record<string, number[] | string | null> = {
+      const message: Record<string, number[] | string | Date | null> = {
         PlayerId: state.thisPlayer.playerId,
         Position: [newX, newY],
         Direction: currDir,
         Kill: null,
         Task: null,
+        Timestamp: new Date(),
       };
+
+      console.log('Sending update', message);
 
       websocket?.current?.send(JSON.stringify(message));
       lastServerUpdate = new Date().valueOf();
@@ -153,16 +157,16 @@ const Game = (props: GameProps) => {
 
     setState({
       ...state,
-      thisPlayer: {...state.thisPlayer, position: [newX, newY]},
+      thisPlayer: { ...state.thisPlayer, position: [newX, newY] },
     });
   }
 
   // Establish WebSocket connection.
   useEffect(() => {
     if (!websocket.current) {
-      websocket.current = new WebSocket(`${url}?name=${props.username}`);
+      websocket.current = new WebSocket(`${url}?name=${props.username}?id=${thisPlayerId}`);
     }
-  }, [props.username]);
+  }, [props.username, thisPlayerId]);
 
   // Set up event handlers separately so state changes are properly observed.
   useEffect(() => {
@@ -172,11 +176,20 @@ const Game = (props: GameProps) => {
         setGameStatus(status.LOBBY);
       };
 
-      websocket.current.onmessage = (message) => {
+      websocket.current.onmessage = (message) => {  
+        if (thisPlayerId === "") {
+          console.log('Received player id', message.data)
+          setThisPlayerId(message.data);
+          return 
+        }
+
         const currState = JSON.parse(message.data);
 
-        if (currState?.State === 1) {
+        console.log('Received state', currState)
+
+        if (currState?.Status === 1) {
           if (gameStatus !== status.PLAYING) {
+            console.log('Stating game');
             setState(constructInitialGameState(currState));
             setGameStatus(status.PLAYING);
           } else {
@@ -189,7 +202,7 @@ const Game = (props: GameProps) => {
         setGameStatus(status.ERROR);
       };
     }
-  }, [gameStatus, constructInitialGameState, updateGameState]);
+  }, [thisPlayerId, gameStatus, setThisPlayerId, constructInitialGameState, updateGameState]);
 
   // Shouldn't close connection on every re-render, so use separate useEffect.
   useEffect(() => {
@@ -198,7 +211,20 @@ const Game = (props: GameProps) => {
     return () => currentWebsocket?.close();
   }, [websocket]);
 
-  // Set up timer to check for movement.
+  // Set up timer to ping
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const [dirX, dirY]: number[] = determineDirection();
+
+      if (dirX || dirY) {
+        updatePosition(dirX, dirY);
+      }
+    }, 25);
+
+    return () => clearInterval(interval);
+  });
+
+  // Set up timer to check for movement
   useEffect(() => {
     const interval = setInterval(() => {
       const [dirX, dirY]: number[] = determineDirection();
@@ -243,7 +269,7 @@ const Game = (props: GameProps) => {
       {gameStatus === status.LOADING && <h1>Loading...</h1>}
       {gameStatus === status.LOBBY && <h1>Waiting for game to start...</h1>}
       {gameStatus === status.PLAYING && (
-        <div style={{overflow: 'hidden', minWidth: '100%', minHeight: '100%'}}>
+        <div style={{ overflow: 'hidden', width: '100vw', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
           <Stage
             maxWidth={1280}
             maxHeight={720}
