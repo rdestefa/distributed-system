@@ -95,7 +95,7 @@ func newGame(toserver chan *serverUpdate) *game {
 
 		limits:   DEFAULT_LIMITS,
 		navmesh:  DEFAULT_NAVMESH,
-		inbox:    make(chan *gameUpdate),
+		inbox:    make(chan *gameUpdate, 16),
 		toserver: toserver,
 	}
 

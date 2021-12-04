@@ -48,7 +48,7 @@ type message struct {
 
 // newServer initializes a new http server for the game backend
 func newServer() *server {
-	inbox := make(chan *serverUpdate)
+	inbox := make(chan *serverUpdate, 16)
 	s := &server{
 		clients:      make(map[string]*client),
 		staleClients: make(map[string]*client),
@@ -116,7 +116,7 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 
 	c := &client{
 		player: newPlayer(name),
-		out:    make(chan message),
+		out:    make(chan message, 16),
 		conn:   conn,
 	}
 
