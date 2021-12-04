@@ -42,7 +42,7 @@ class TestClient:
                 return
             if self.verbose:
                 print('send_updates', self.id)
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     def on_message(self, _ws, message):
         if self.id == None:
@@ -72,8 +72,8 @@ clients = [TestClient(f"test {i}", verbose=(i==N-1)) for i in range(N)]
 print(len(clients), 'clients')
 for client in clients:
     client.start()
-time.sleep(0.5)
+time.sleep(3)
 for i, client in enumerate(clients):
     print('Stopping client', client.id)
     client.stop()
-    time.sleep(0.1 * i)
+    time.sleep(0.001 * i)

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/time/rate"
+	// "golang.org/x/time/rate"
 
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -20,10 +20,10 @@ type server struct {
 	staleClients map[string]*client
 	nextGame     *game
 
-	mu          sync.Mutex
-	inbox       chan *serverUpdate
-	serveMux    http.ServeMux
-	rateLimiter *rate.Limiter
+	mu       sync.Mutex
+	inbox    chan *serverUpdate
+	serveMux http.ServeMux
+	// rateLimiter *rate.Limiter
 }
 
 type client struct {
@@ -31,13 +31,15 @@ type client struct {
 	game         *game
 	out          chan message
 	conn         *websocket.Conn
+	rwTerminate  func()
+	rwWg         sync.WaitGroup
 	disconnected bool
 }
 
 type serverUpdate struct {
 	gameState *GameState
 	playerIds []string
-	endgame   bool
+	endgame   *game
 }
 
 type message struct {
@@ -49,10 +51,11 @@ type message struct {
 func newServer() *server {
 	inbox := make(chan *serverUpdate)
 	s := &server{
-		clients:     make(map[string]*client),
-		nextGame:    newGame(inbox),
-		rateLimiter: rate.NewLimiter(rate.Every(time.Millisecond*100), 8),
-		inbox:       inbox,
+		clients:      make(map[string]*client),
+		staleClients: make(map[string]*client),
+		nextGame:     newGame(inbox),
+		inbox:        inbox,
+		// rateLimiter:  rate.NewLimiter(rate.Every(1*time.Millisecond), 8), // TODO: change this
 	}
 	s.serveMux.Handle("/", http.FileServer(http.Dir(".")))
 	s.serveMux.HandleFunc("/connect", s.connectHandler)
@@ -90,8 +93,6 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 	if playerId == "" {
 		playerId = r.Header.Get("id")
 	}
-	// TODO: remove debug print
-	log.Println(playerId)
 
 	err = s.connect(r.Context(), c, name)
 	if errors.Is(err, context.Canceled) {
@@ -120,6 +121,8 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 		conn:   conn,
 	}
 
+	log.Println("Connect player:", c.player.PlayerId)
+
 	// add new player
 	if err := s.nextGame.addPlayer(c.player); err != nil {
 		close(c.out)
@@ -143,10 +146,12 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 		s.nextGame = newGame(s.inbox)
 	}
 
-	socketCtx := context.Background()
+	rwCtx, cancel := context.WithCancel(context.Background())
 
-	go s.clientWriter(socketCtx, c)
-	go s.clientReader(socketCtx, c)
+	c.rwTerminate = cancel
+
+	go s.clientReader(rwCtx, c)
+	go s.clientWriter(rwCtx, c)
 
 	return nil
 }
@@ -154,11 +159,14 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 // clientReader loops reading messages from a client
 func (s *server) clientReader(ctx context.Context, c *client) {
 	defer func() {
+		c.rwWg.Done()
 		log.Println("clientReader is closing", c.player.PlayerId)
 		go s.deleteClient(c, false)
 		// TODO: check if we just want a normal closure or what
-		c.conn.Close(websocket.StatusNormalClosure, "")
+		// c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
+
+	c.rwWg.Add(1)
 
 	for {
 		a, err := readTimeout(ctx, 1*time.Second, c.conn)
@@ -170,8 +178,15 @@ func (s *server) clientReader(ctx context.Context, c *client) {
 			log.Println("clientReader:", err.Error())
 			return
 		}
-		c.game.inbox <- &gameUpdate{
+		select {
+		case c.game.inbox <- &gameUpdate{
 			action: a,
+		}:
+			// ok
+		case <-ctx.Done():
+			log.Println("Context done on clientReader:", c.player.PlayerId)
+			// in case the game ends, the server forces the disconnection
+			return
 		}
 	}
 }
@@ -179,10 +194,14 @@ func (s *server) clientReader(ctx context.Context, c *client) {
 // clientWriter loops writing messages to a client
 func (s *server) clientWriter(ctx context.Context, c *client) {
 	defer func() {
+		c.rwWg.Done()
 		log.Println("clientWriter is closing", c.player.PlayerId)
+		go s.deleteClient(c, false)
 		// TODO: check if we just want a normal closure or what
-		c.conn.Close(websocket.StatusNormalClosure, "")
+		// c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
+
+	c.rwWg.Add(1)
 
 	for {
 		select {
@@ -197,12 +216,12 @@ func (s *server) clientWriter(ctx context.Context, c *client) {
 				return
 			}
 			if msg.last {
-				log.Println("Last message", c.player)
-				go s.deleteClient(c, false)
+				log.Println("clientWriter has last message:", c.player)
 				return
 			}
 		case <-ctx.Done():
-			log.Println("ctx is Done", c)
+			log.Println("Context done on clientWriter:", c.player.PlayerId)
+			// in case the game ends, the server forces the disconnection
 			return
 		}
 	}
@@ -215,37 +234,33 @@ func (s *server) watch() {
 			content, err := json.Marshal(u.gameState)
 			if err != nil {
 				log.Println("Watch failed to marshall game state")
-				continue
+			} else {
+				s.broadcastMessage(message{content: content, last: u.endgame != nil}, u.playerIds)
 			}
-			s.broadcastMessage(message{content: content, last: u.endgame}, u.playerIds)
 		}
 
-		if u.endgame {
-			s.endGameForPlayers(u.playerIds)
+		if u.endgame != nil {
+			log.Println("Going to end game for players:", u.playerIds)
+			s.endGameForPlayers(u.playerIds, u.endgame)
 		}
 	}
 }
 
 // endGame
-func (s *server) endGameForPlayers(playerIds []string) {
+func (s *server) endGameForPlayers(playerIds []string, game *game) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var game *game = nil
-
 	for _, playerId := range playerIds {
-		if client, ok := s.clients[playerId]; ok {
-			game = client.game
-			client.game = nil
-			go s.deleteClient(client, true)
+		if c, ok := s.clients[playerId]; ok {
+			c.rwWg.Wait()
 		} else {
 			log.Println("End game for players: client", playerId, "not found")
 		}
 	}
 
-	if game != nil {
-		game.inbox <- &gameUpdate{quit: true}
-	}
+	log.Println("Sending quit game:", game.GameId)
+	game.inbox <- &gameUpdate{quit: true}
 }
 
 // broadcastMessage sends a message the specified clients
@@ -253,13 +268,14 @@ func (s *server) broadcastMessage(msg message, playerIds []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.rateLimiter.Wait(context.Background())
+	// s.rateLimiter.Wait(context.Background())
 
 	for _, playerId := range playerIds {
 		if client, ok := s.clients[playerId]; ok {
 			select {
 			case client.out <- msg:
 			default:
+				log.Println("Connection too slow:", playerId)
 				client.conn.Close(websocket.StatusPolicyViolation, "Connection too slow to keep up with messages")
 				go s.deleteClient(client, false)
 			}
@@ -274,23 +290,40 @@ func (s *server) deleteClient(c *client, permanent bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	c.disconnected = true
+	// TODO: check if we just want a normal closure or what
+	// close socket if not yet closed
+	c.conn.Close(websocket.StatusNormalClosure, "")
 
-	// Remove client from game
-	if c.game != nil {
-		c.game.inbox <- &gameUpdate{
-			disconnect: &c.player.PlayerId,
-		}
+	// remove client from set of running clients
+	if _, ok := s.clients[c.player.PlayerId]; ok {
+		delete(s.clients, c.player.PlayerId)
+	} else {
+		return
 	}
+
+	// mark client as disconnected
+	c.disconnected = true
 
 	if !permanent {
 		// TODO: take care of client being able to reconnect
 		//       spun up a thread to wait for reconnection
 	}
 
-	if _, ok := s.clients[c.player.PlayerId]; ok {
-		delete(s.clients, c.player.PlayerId)
-		close(c.out)
+	// wait for reader and writer goroutines to finish
+	c.rwTerminate()
+	c.rwWg.Wait()
+
+	// close channel as writer goroutine is no longer running
+	close(c.out)
+
+	go removeClientFromGame(c)
+}
+
+func removeClientFromGame(c *client) {
+	if !c.game.inEndGame() {
+		c.game.inbox <- &gameUpdate{
+			disconnect: &c.player.PlayerId,
+		}
 	}
 }
 

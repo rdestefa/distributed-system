@@ -135,7 +135,7 @@ func (g *game) addPlayer(p *Player) error {
 }
 
 func (g *game) watch() {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(50 * time.Millisecond) // 20/s
 	for {
 		select {
 		case <-ticker.C:
@@ -159,7 +159,7 @@ func (g *game) sendUpdate() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	endgame := g.Status == CREWMATES_WIN || g.Status == IMPOSTORS_WIN
+	endgame := g.inEndGame()
 
 	log.Println("Send update", endgame)
 
@@ -172,11 +172,14 @@ func (g *game) sendUpdate() bool {
 	}
 
 	// Send snapshot of game state to those players
-	g.toserver <- &serverUpdate{
+	u := &serverUpdate{
 		gameState: &g.GameState,
 		playerIds: playerIds,
-		endgame:   endgame,
 	}
+	if endgame {
+		u.endgame = g
+	}
+	g.toserver <- u
 
 	return endgame
 }
@@ -185,12 +188,12 @@ func (g *game) performAction(a *Action) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	log.Println("Perform action:", a)
+	// log.Println("Perform action:", a)
 
 	if a.Position != nil {
 		// TODO: check if move is valid
-		log.Println("Action position: a.Position", a.Position)
-		log.Println("Action direction: a.Direction", a.Direction)
+		// log.Println("Action position: a.Position", a.Position)
+		// log.Println("Action direction: a.Direction", a.Direction)
 
 		p := g.Players[a.PlayerId]
 
@@ -222,7 +225,6 @@ func (g *game) disconnectPlayer(playerId string) {
 
 	p := g.Players[playerId]
 	if p != nil {
-		p.IsAlive = false
 		p.IsConnected = false
 	} else {
 		log.Println("Error on disconnecting player, player not found: ", playerId)
@@ -250,6 +252,10 @@ func (g *game) checkEndgame() {
 	} else if countCrewmates == 0 {
 		g.Status = IMPOSTORS_WIN
 	}
+}
+
+func (g *game) inEndGame() bool {
+	return g.Status == CREWMATES_WIN || g.Status == IMPOSTORS_WIN
 }
 
 func (g *game) start() {
