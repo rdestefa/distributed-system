@@ -148,6 +148,7 @@ const Game = (props: GameProps) => {
       };
 
       websocket?.current?.send(JSON.stringify(message));
+      lastServerUpdate = new Date().valueOf();
     }
 
     setState({
