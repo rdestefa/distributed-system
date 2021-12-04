@@ -1,5 +1,5 @@
 import React from 'react';
-
+import {IGameState} from './gameState';
 interface StageProps {
   maxWidth: number;
   maxHeight: number;
@@ -10,6 +10,9 @@ interface StageProps {
   windowWidth: number;
   windowHeight: number;
   backgroundColor: string;
+  gameState: IGameState;
+  keyDownHandler: React.KeyboardEventHandler<HTMLCanvasElement>;
+  keyUpHandler: React.KeyboardEventHandler<HTMLCanvasElement>;
 }
 
 const Stage = ({
@@ -22,9 +25,13 @@ const Stage = ({
   windowWidth,
   windowHeight,
   backgroundColor,
+  gameState,
+  keyDownHandler,
+  keyUpHandler,
 }: StageProps) => {
   // const [frameTime, setFrameTime] = React.useState(performance.now());
   const [stageX, stageY] = stageCenter;
+  const [left, top] = [stageX - windowWidth / 2, stageY - windowHeight / 2];
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const canvasWidth = Math.min(window.innerWidth, maxWidth);
   const canvasHeight = Math.min(window.innerHeight, maxHeight);
@@ -37,20 +44,20 @@ const Stage = ({
 
       const drawPromises: Promise<Function>[] = [];
 
-      // Background color
+      // Background color.
       const backgroundColorPromise = Promise.resolve(() => {
         context.fillStyle = backgroundColor;
         context.fillRect(0, 0, canvasWidth, canvasHeight);
       });
       drawPromises.push(backgroundColorPromise);
 
-      // Background image
+      // Background image.
       const backgroundImagePromise = stageBackground.then((bgImg) => {
         return () => {
           context.drawImage(
             bgImg,
-            stageX - windowWidth / 2,
-            stageY - windowHeight / 2,
+            left,
+            top,
             windowWidth,
             windowHeight,
             0,
@@ -62,38 +69,49 @@ const Stage = ({
       });
       drawPromises.push(backgroundImagePromise);
 
-      const players: [string, number, number][] = [
-        ['red', 20, -20],
-        ['blue', -100, 60],
-        ['yellow', -294, 60],
-        ['green', -416, -20],
-        ['purple', -450, -166],
-        ['orange', -416, -320],
-        ['maroon', -294, -400],
-        ['teal', -100, -400],
-        ['lime', 20, -320],
-        ['fuchsia', 54, -166],
-      ];
+      const playerWidth = 16 * (canvasWidth / windowWidth);
+      const playerHeight = 24 * (canvasHeight / windowHeight);
 
-      players.forEach(function (player) {
-        // Player rectangle
-        const playerPromise = Promise.resolve(() => {
-          const width = 16 * (canvasWidth / windowWidth);
-          const height = 24 * (canvasHeight / windowHeight);
+      const thisPlayerPromise = Promise.resolve(() => {
+        context.fillStyle = gameState.thisPlayer.color;
 
-          context.fillStyle = player[0];
+        context.fillRect(
+          canvasWidth / 2 - playerWidth / 2,
+          canvasHeight / 2 - playerHeight / 2,
+          playerWidth,
+          playerHeight
+        );
+      });
+      drawPromises.push(thisPlayerPromise);
 
-          context.fillRect(
-            canvasWidth / 2 - width / 2 + player[1],
-            canvasHeight / 2 - height / 2 + player[2],
-            width,
-            height
-          );
-        });
-        drawPromises.push(playerPromise);
+      // Other players.
+      Object.entries(gameState.otherPlayers).forEach(([key, val]) => {
+        if (
+          val.position[0] > left &&
+          val.position[0] < left + windowWidth &&
+          val.position[1] > top &&
+          val.position[1] < top + windowHeight
+        ) {
+          const otherPlayerPromise = Promise.resolve(() => {
+            context.fillStyle = val.color;
+
+            context.fillRect(
+              canvasWidth / 2 +
+                (val.position[0] - stageX) * (canvasWidth / windowWidth) -
+                playerWidth / 2,
+              canvasHeight / 2 +
+                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
+                playerHeight / 2,
+              playerWidth,
+              playerHeight
+            );
+          });
+
+          drawPromises.push(otherPlayerPromise);
+        }
       });
 
-      // Perform draws
+      // Perform draws.
       Promise.all(drawPromises)
         .then((draws) => {
           draws.forEach((draw) => draw());
@@ -109,8 +127,12 @@ const Stage = ({
     stageBackground,
     stageX,
     stageY,
+    left,
+    top,
     windowHeight,
     windowWidth,
+    gameState.otherPlayers,
+    gameState.thisPlayer.color,
   ]);
 
   return (
@@ -119,6 +141,9 @@ const Stage = ({
       height={canvasHeight}
       width={canvasWidth}
       style={{display: 'block', margin: 'auto'}}
+      onKeyDown={keyDownHandler}
+      onKeyUp={keyUpHandler}
+      tabIndex={0}
     />
   );
 };
