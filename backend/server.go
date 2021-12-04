@@ -174,7 +174,7 @@ func (s *server) clientReader(ctx context.Context, c *client) {
 			return
 		}
 		if err != nil {
-			WarnLogger.Println("clientReader:", err.Error())
+			WarnLogger.Println("clientReader:", c.player.PlayerId, err.Error())
 			return
 		}
 		select {
@@ -211,11 +211,11 @@ func (s *server) clientWriter(ctx context.Context, c *client) {
 				return
 			}
 			if err != nil {
-				WarnLogger.Println("clientWriter:", err)
+				WarnLogger.Println("clientWriter:", c.player.PlayerId, err)
 				return
 			}
 			if msg.last {
-				InfoLogger.Println("clientWriter has last message:", c.player)
+				InfoLogger.Println("clientWriter has last message:", c.player.PlayerId)
 				return
 			}
 		case <-ctx.Done():
@@ -319,7 +319,7 @@ func (s *server) deleteClient(c *client, permanent bool) {
 }
 
 func removeClientFromGame(c *client) {
-	if !c.game.inEndGame() {
+	if !c.game.inEndOfGame() {
 		c.game.inbox <- &gameUpdate{
 			disconnect: &c.player.PlayerId,
 		}

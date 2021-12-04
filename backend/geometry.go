@@ -34,6 +34,10 @@ func (v Vector) mul(scalar float64) Vector {
 	}
 }
 
+func (v Vector) squaredDistance(other Vector) float64 {
+	return math.Pow(v.X-other.X, 2) + math.Pow(v.Y-other.Y, 2)
+}
+
 func (v Vector) crossProduct(other Vector) float64 {
 	return v.X*other.Y - v.Y*other.X
 }

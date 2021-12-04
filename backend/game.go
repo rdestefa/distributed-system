@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 
@@ -41,6 +42,7 @@ type Player struct {
 	IsConnected bool
 	Position    Vector
 	Direction   Vector
+	LastHeard   Time
 }
 
 type Action struct {
@@ -49,14 +51,16 @@ type Action struct {
 	Direction *Vector
 	Kill      *string
 	Task      *string
-	// TODO: maybe add some kind of time component to be verified for correctness or to enable synchronization.
+	Timestamp Time
+}
+
+type Time struct {
+	time.Time
 }
 
 type game struct {
 	GameState
 
-	limits   Vector
-	navmesh  Navmesh
 	inbox    chan *gameUpdate
 	toserver chan *serverUpdate
 	mu       sync.RWMutex
@@ -68,20 +72,28 @@ type gameUpdate struct {
 	quit       bool
 }
 
-// The following directive loads the file from disk or embeds into the binary when compiling
-//go:embed navmesh.json
-var DEFAULT_NAVMESH_BYTES []byte
-var DEFAULT_NAVMESH_POINTS [][]Vector
-var DEFAULT_NAVMESH Navmesh
-var DEFAULT_LIMITS Vector = Vector{X: 1531, Y: 1053}
-var DEFAULT_START_CENTER = Vector{X: 818, Y: 294}
-var DEFAULT_START_RADIUS = 70.0
+var (
+	// the following directive loads the file from disk or embeds into the binary when compiling
+	//go:embed navmesh.json
+	NAVMESH_BYTES  []byte
+	NAVMESH_POINTS [][]Vector
+	NAVMESH        Navmesh
+	LIMITS         = Vector{X: 1531, Y: 1053}
+	START_CENTER   = Vector{X: 818, Y: 294}
+)
+
+const (
+	START_RADIUS   = 70.0
+	MOVE_SPEED     = 100.0
+	MOVE_ALLOWANCE = 0.1
+	KILL_RANGE     = 10.0
+)
 
 func init() {
-	if err := json.Unmarshal(DEFAULT_NAVMESH_BYTES, &DEFAULT_NAVMESH_POINTS); err != nil {
+	if err := json.Unmarshal(NAVMESH_BYTES, &NAVMESH_POINTS); err != nil {
 		panic(err)
 	}
-	DEFAULT_NAVMESH = *newNavmesh(DEFAULT_NAVMESH_POINTS)
+	NAVMESH = *newNavmesh(NAVMESH_POINTS)
 }
 
 func newGame(toserver chan *serverUpdate) *game {
@@ -93,11 +105,12 @@ func newGame(toserver chan *serverUpdate) *game {
 			CompletedTasks: make(map[string]interface{}),
 		},
 
-		limits:   DEFAULT_LIMITS,
-		navmesh:  DEFAULT_NAVMESH,
 		inbox:    make(chan *gameUpdate, 16),
 		toserver: toserver,
 	}
+
+	// start game loop
+	go g.watch()
 
 	return g
 }
@@ -111,6 +124,7 @@ func newPlayer(name string) *Player {
 		IsConnected: true,
 		Position:    ZERO_VECTOR,
 		Direction:   ZERO_VECTOR,
+		LastHeard:   Time{time.Now()},
 	}
 
 	return p
@@ -141,14 +155,15 @@ func (g *game) watch() {
 			g.sendUpdate()
 		case u := <-g.inbox:
 			if u.quit {
+				ticker.Stop()
 				close(g.inbox)
 				return
 			} else if u.action != nil {
 				g.performAction(u.action)
-				g.checkEndgame()
+				g.checkEndOfGame()
 			} else if u.disconnect != nil {
 				g.disconnectPlayer(*u.disconnect)
-				g.checkEndgame()
+				g.checkEndOfGame()
 			}
 		}
 	}
@@ -158,7 +173,7 @@ func (g *game) sendUpdate() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	endgame := g.inEndGame()
+	endgame := g.inEndOfGame()
 
 	InfoLogger.Println("Send update", endgame)
 
@@ -190,30 +205,74 @@ func (g *game) performAction(a *Action) {
 	InfoLogger.Println("Perform action:", a)
 
 	if a.Position != nil {
-		// TODO: check if move is valid
 		InfoLogger.Println("Action position: a.Position", a.Position)
 		InfoLogger.Println("Action direction: a.Direction", a.Direction)
 
-		p := g.Players[a.PlayerId]
-
-		if p != nil {
-			p.Position = *a.Position
-			p.Direction = *a.Direction
-		} else {
-			ErrorLogger.Println("performAction could not find player:", a.PlayerId)
+		if g.Status != IN_PROGRESS {
+			WarnLogger.Println("performAction detected attempt to move when not in progress:", a.PlayerId)
+			goto PositionNoOp
 		}
+
+		p, ok := g.Players[a.PlayerId]
+		if !ok {
+			ErrorLogger.Println("performAction could not find player:", a.PlayerId)
+			goto PositionNoOp
+		}
+
+		duration := a.Timestamp.Time.Sub(p.LastHeard.Time).Seconds()
+		maxDistanceSquared := math.Pow(duration*MOVE_SPEED+MOVE_ALLOWANCE, 2)
+		distanceSquared := a.Position.squaredDistance(p.Position)
+		if distanceSquared > maxDistanceSquared {
+			WarnLogger.Println("performAction detected excessive movement from player:", a.PlayerId)
+			goto PositionNoOp
+		}
+
+		p.Position = *a.Position
+		p.Direction = *a.Direction
 	}
+PositionNoOp:
 
 	if a.Kill != nil {
-		// TODO: check if player is impostor and other player is in range
-		p := g.Players[*a.Kill]
-		p.IsAlive = false
+		if g.Status != IN_PROGRESS {
+			WarnLogger.Println("performAction detected attempt to kill when not in progress:", a.PlayerId)
+			goto KillNoOp
+		}
+
+		pKiller, ok := g.Players[a.PlayerId]
+		if !ok {
+			ErrorLogger.Println("performAction could not find player:", a.PlayerId)
+			goto KillNoOp
+		}
+
+		pVictim, ok := g.Players[*a.Kill]
+		if !ok {
+			ErrorLogger.Println("performAction could not find player:", *a.Kill)
+			goto KillNoOp
+		}
+
+		duration := a.Timestamp.Time.Sub(pVictim.LastHeard.Time).Seconds()
+		maxDistanceSquared := math.Pow(duration*MOVE_SPEED+KILL_RANGE+MOVE_ALLOWANCE, 2)
+		distanceSquared := pKiller.Position.squaredDistance(pVictim.Position)
+		if distanceSquared > maxDistanceSquared {
+			WarnLogger.Println("performAction detected invalid kill from player:", a.PlayerId)
+			goto KillNoOp
+		}
+
+		pVictim.IsAlive = false
 	}
+KillNoOp:
 
 	if a.Task != nil {
+		if g.Status != IN_PROGRESS {
+			WarnLogger.Println("performAction detected attempt to complete task when not in progress:", a.PlayerId)
+			goto TaskNoOp
+		}
+
 		// TODO: perform necessary checks
 		g.CompletedTasks[*a.Task] = struct{}{}
+		goto TaskNoOp
 	}
+TaskNoOp:
 }
 
 func (g *game) disconnectPlayer(playerId string) {
@@ -230,9 +289,13 @@ func (g *game) disconnectPlayer(playerId string) {
 	}
 }
 
-func (g *game) checkEndgame() {
+func (g *game) checkEndOfGame() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	if g.Status != IN_PROGRESS {
+		return
+	}
 
 	var countImpostors uint32 = 0
 	var countCrewmates uint32 = 0
@@ -251,9 +314,11 @@ func (g *game) checkEndgame() {
 	} else if countCrewmates == 0 {
 		g.Status = IMPOSTORS_WIN
 	}
+
+	// TODO: check for all tasks completed
 }
 
-func (g *game) inEndGame() bool {
+func (g *game) inEndOfGame() bool {
 	return g.Status == CREWMATES_WIN || g.Status == IMPOSTORS_WIN
 }
 
@@ -277,12 +342,28 @@ func (g *game) start() {
 
 		i += 1
 		startAngle += (2.0 * math.Pi) / float64(len(g.Players))
-		player.Position = DEFAULT_START_CENTER.add(Vector{X: math.Cos(startAngle), Y: math.Sin(startAngle)}.mul(DEFAULT_START_RADIUS))
+		player.Position = START_CENTER.add(Vector{X: math.Cos(startAngle), Y: math.Sin(startAngle)}.mul(START_RADIUS))
+
+		player.LastHeard = Time{time.Now()}
 	}
 
 	// signal that game has started
 	g.Status = IN_PROGRESS
+}
 
-	// start game loop
-	go g.watch()
+func (t *Time) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	ret, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return err
+	}
+	t.Time = ret
+	return nil
+}
+
+func (t Time) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.Format(time.RFC3339))
 }
