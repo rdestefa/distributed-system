@@ -3,22 +3,56 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 )
 
 const LOGFILENAME = "backend.log"
 const ADDRESS = "0.0.0.0:10000"
 
+var (
+	WarnLogger  *log.Logger
+	InfoLogger  *log.Logger
+	ErrorLogger *log.Logger
+)
+
+func init() {
+	logLevel := strings.ToLower(os.Getenv("LOGLEVEL"))
+	if logLevel == "" {
+		logLevel = "error"
+	}
+
+	InfoLogger = log.New(ioutil.Discard, "", 0)
+	WarnLogger = log.New(ioutil.Discard, "", 0)
+	ErrorLogger = log.New(ioutil.Discard, "", 0)
+
+	switch logLevel {
+	case "info":
+		InfoLogger = log.New(os.Stderr, "[INFO]  ", log.Ldate|log.Ltime|log.Lshortfile)
+		fallthrough
+	case "warn":
+		WarnLogger = log.New(os.Stderr, "[WARN]  ", log.Ldate|log.Ltime|log.Lshortfile)
+		fallthrough
+	case "":
+		fallthrough
+	case "error":
+		ErrorLogger = log.New(os.Stderr, "[ERROR] ", log.Ldate|log.Ltime|log.Lshortfile)
+	default:
+		// no logging in case the user passes some other value like "none"
+	}
+}
+
 func main() {
 	// Run main server loop and handle any unexpected errors
 	err := run()
 	if err != nil {
-		log.Println(err)
+		ErrorLogger.Println(err)
 		panic(err)
 	}
 }
@@ -30,14 +64,6 @@ func run() error {
 		return err
 	}
 	fmt.Printf("Listening on http://%v\n", l.Addr())
-
-	// Setup log file
-	// logFile, err := os.OpenFile(LOGFILENAME, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
-	// if err != nil {
-	// 	return err
-	// }
-	// defer logFile.Close()
-	// log.SetOutput(logFile)
 
 	// Setup http server and connect to address
 	s := newServer()
@@ -56,9 +82,9 @@ func run() error {
 	signal.Notify(sigs, os.Interrupt)
 	select {
 	case err := <-errc:
-		log.Printf("Failed to serve: %v\n", err)
+		ErrorLogger.Printf("Failed to serve: %v\n", err)
 	case sig := <-sigs:
-		log.Printf("Terminating: %v\n", sig)
+		WarnLogger.Printf("Terminating: %v\n", sig)
 	}
 
 	// Upon signal, wait 10 seconds and force shutdown

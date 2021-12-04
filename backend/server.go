@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -80,7 +79,7 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 
 	c, err := websocket.Accept(w, r, options)
 	if err != nil {
-		log.Println(err)
+		ErrorLogger.Println(err)
 		return
 	}
 
@@ -103,7 +102,7 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Println(err)
+		ErrorLogger.Println(err)
 		return
 	}
 }
@@ -121,7 +120,7 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 		conn:   conn,
 	}
 
-	log.Println("Connect player:", c.player.PlayerId)
+	InfoLogger.Println("Connect player:", c.player.PlayerId)
 
 	// add new player
 	if err := s.nextGame.addPlayer(c.player); err != nil {
@@ -160,7 +159,7 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 func (s *server) clientReader(ctx context.Context, c *client) {
 	defer func() {
 		c.rwWg.Done()
-		log.Println("clientReader is closing", c.player.PlayerId)
+		WarnLogger.Println("clientReader is closing", c.player.PlayerId)
 		go s.deleteClient(c, false)
 		// TODO: check if we just want a normal closure or what
 		// c.conn.Close(websocket.StatusNormalClosure, "")
@@ -175,7 +174,7 @@ func (s *server) clientReader(ctx context.Context, c *client) {
 			return
 		}
 		if err != nil {
-			log.Println("clientReader:", err.Error())
+			WarnLogger.Println("clientReader:", err.Error())
 			return
 		}
 		select {
@@ -184,7 +183,7 @@ func (s *server) clientReader(ctx context.Context, c *client) {
 		}:
 			// ok
 		case <-ctx.Done():
-			log.Println("Context done on clientReader:", c.player.PlayerId)
+			InfoLogger.Println("Context done on clientReader:", c.player.PlayerId)
 			// in case the game ends, the server forces the disconnection
 			return
 		}
@@ -195,7 +194,7 @@ func (s *server) clientReader(ctx context.Context, c *client) {
 func (s *server) clientWriter(ctx context.Context, c *client) {
 	defer func() {
 		c.rwWg.Done()
-		log.Println("clientWriter is closing", c.player.PlayerId)
+		WarnLogger.Println("clientWriter is closing", c.player.PlayerId)
 		go s.deleteClient(c, false)
 		// TODO: check if we just want a normal closure or what
 		// c.conn.Close(websocket.StatusNormalClosure, "")
@@ -212,15 +211,15 @@ func (s *server) clientWriter(ctx context.Context, c *client) {
 				return
 			}
 			if err != nil {
-				log.Println("clientWriter:", err)
+				WarnLogger.Println("clientWriter:", err)
 				return
 			}
 			if msg.last {
-				log.Println("clientWriter has last message:", c.player)
+				InfoLogger.Println("clientWriter has last message:", c.player)
 				return
 			}
 		case <-ctx.Done():
-			log.Println("Context done on clientWriter:", c.player.PlayerId)
+			InfoLogger.Println("Context done on clientWriter:", c.player.PlayerId)
 			// in case the game ends, the server forces the disconnection
 			return
 		}
@@ -233,14 +232,14 @@ func (s *server) watch() {
 		if u.gameState != nil {
 			content, err := json.Marshal(u.gameState)
 			if err != nil {
-				log.Println("Watch failed to marshall game state")
+				ErrorLogger.Println("Watch failed to marshall game state")
 			} else {
 				s.broadcastMessage(message{content: content, last: u.endgame != nil}, u.playerIds)
 			}
 		}
 
 		if u.endgame != nil {
-			log.Println("Going to end game for players:", u.playerIds)
+			InfoLogger.Println("Going to end game for players:", u.playerIds)
 			s.endGameForPlayers(u.playerIds, u.endgame)
 		}
 	}
@@ -255,11 +254,11 @@ func (s *server) endGameForPlayers(playerIds []string, game *game) {
 		if c, ok := s.clients[playerId]; ok {
 			c.rwWg.Wait()
 		} else {
-			log.Println("End game for players: client", playerId, "not found")
+			InfoLogger.Println("End game for players: client", playerId, "not found")
 		}
 	}
 
-	log.Println("Sending quit game:", game.GameId)
+	InfoLogger.Println("Sending quit game:", game.GameId)
 	game.inbox <- &gameUpdate{quit: true}
 }
 
@@ -275,12 +274,12 @@ func (s *server) broadcastMessage(msg message, playerIds []string) {
 			select {
 			case client.out <- msg:
 			default:
-				log.Println("Connection too slow:", playerId)
+				WarnLogger.Println("Connection too slow:", playerId)
 				client.conn.Close(websocket.StatusPolicyViolation, "Connection too slow to keep up with messages")
 				go s.deleteClient(client, false)
 			}
 		} else {
-			log.Println("Broadcast: client", playerId, "not found")
+			WarnLogger.Println("Broadcast: client", playerId, "not found")
 		}
 	}
 }

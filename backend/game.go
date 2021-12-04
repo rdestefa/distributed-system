@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"math"
 	"math/rand"
 	"sync"
@@ -161,9 +160,9 @@ func (g *game) sendUpdate() bool {
 
 	endgame := g.inEndGame()
 
-	log.Println("Send update", endgame)
+	InfoLogger.Println("Send update", endgame)
 
-	// Get a list of connected player ids in this game
+	// get a list of connected player ids in this game
 	playerIds := make([]string, 0, len(g.Players))
 	for playerId, player := range g.Players {
 		if player.IsConnected {
@@ -171,7 +170,7 @@ func (g *game) sendUpdate() bool {
 		}
 	}
 
-	// Send snapshot of game state to those players
+	// send snapshot of game state to those players
 	u := &serverUpdate{
 		gameState: &g.GameState,
 		playerIds: playerIds,
@@ -188,12 +187,12 @@ func (g *game) performAction(a *Action) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// log.Println("Perform action:", a)
+	InfoLogger.Println("Perform action:", a)
 
 	if a.Position != nil {
 		// TODO: check if move is valid
-		// log.Println("Action position: a.Position", a.Position)
-		// log.Println("Action direction: a.Direction", a.Direction)
+		InfoLogger.Println("Action position: a.Position", a.Position)
+		InfoLogger.Println("Action direction: a.Direction", a.Direction)
 
 		p := g.Players[a.PlayerId]
 
@@ -201,7 +200,7 @@ func (g *game) performAction(a *Action) {
 			p.Position = *a.Position
 			p.Direction = *a.Direction
 		} else {
-			log.Println("Error on new position, player not found: ", a.PlayerId)
+			ErrorLogger.Println("performAction could not find player:", a.PlayerId)
 		}
 	}
 
@@ -221,13 +220,13 @@ func (g *game) disconnectPlayer(playerId string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	log.Println("Disconnect player:", playerId)
+	InfoLogger.Println("Disconnect player:", playerId)
 
 	p := g.Players[playerId]
 	if p != nil {
 		p.IsConnected = false
 	} else {
-		log.Println("Error on disconnecting player, player not found: ", playerId)
+		ErrorLogger.Println("disconnectPlayer could not find player:", playerId)
 	}
 }
 
@@ -262,13 +261,13 @@ func (g *game) start() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Choose impostors and prevent duplicate
+	// choose impostors and prevent duplicates
 	impostor1, impostor2 := rand.Intn(len(g.Players)), rand.Intn(len(g.Players))
 	for impostor1 == impostor2 {
 		impostor2 = rand.Intn(len(g.Players))
 	}
 
-	// Set chosen players as impostors and choose start positions
+	// set chosen players as impostors and choose start positions
 	i := 0
 	startAngle := 0.0
 	for _, player := range g.Players {
@@ -281,9 +280,9 @@ func (g *game) start() {
 		player.Position = DEFAULT_START_CENTER.add(Vector{X: math.Cos(startAngle), Y: math.Sin(startAngle)}.mul(DEFAULT_START_RADIUS))
 	}
 
-	// Signal that game has started
+	// signal that game has started
 	g.Status = IN_PROGRESS
 
-	// Start game loop
+	// start game loop
 	go g.watch()
 }
