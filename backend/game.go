@@ -84,9 +84,9 @@ var (
 
 const (
 	START_RADIUS   = 70.0
-	MOVE_SPEED     = 100.0
+	MOVE_SPEED     = 200.0
 	MOVE_ALLOWANCE = 0.1
-	KILL_RANGE     = 10.0
+	KILL_RANGE     = 30.0
 )
 
 func init() {
@@ -201,6 +201,8 @@ func (g *game) sendUpdate() bool {
 func (g *game) performAction(a *Action) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	// TODO: check if id is correct
 
 	InfoLogger.Println("Perform action:", a)
 
@@ -365,5 +367,5 @@ func (t *Time) UnmarshalJSON(b []byte) error {
 }
 
 func (t Time) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.Format(time.RFC3339))
+	return json.Marshal(t.Format(time.RFC3339Nano))
 }
