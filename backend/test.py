@@ -15,12 +15,14 @@ websocket.enableTrace(False)
 
 MOVE_SPEED = 120.0
 
+
 class DateTimeJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime.datetime):
             return obj.isoformat("T") + "Z"
         else:
             return super(DateTimeJSONEncoder, self).default(obj)
+
 
 class TestClient:
     def __init__(self, name, verbose):
@@ -29,9 +31,10 @@ class TestClient:
         self.wst = None
         self.sendt = None
         self.verbose = verbose
-    
+
     def start(self):
-        self.wsapp = websocket.WebSocketApp(f"ws://localhost:10000/connect", header={'name': self.name}, on_message=self.on_message, on_close=self.on_close)
+        self.wsapp = websocket.WebSocketApp(f"ws://localhost:10000/connect", header={
+                                            'name': self.name}, on_message=self.on_message, on_close=self.on_close)
         self.wst = threading.Thread(target=self.wsapp.run_forever)
         self.wst.daemon = True
         self.wst.start()
@@ -50,7 +53,7 @@ class TestClient:
         if self.sendt:
             self.sendt.join()
             self.sendt = None
-    
+
     def send(self, data):
         now = datetime.datetime.utcnow()
         data = data | {'PlayerId': self.id, 'TimeStamp': now}
@@ -70,13 +73,17 @@ class TestClient:
                     if same_direction == 0:
                         angle = 2 * math.pi * random.random()
                     same_direction = (same_direction + 1) % 10
-                    duration = (datetime.datetime.utcnow() - self.last_message).total_seconds()
-                    r =  duration * MOVE_SPEED
+                    duration = (datetime.datetime.utcnow() -
+                                self.last_message).total_seconds()
+                    r = duration * MOVE_SPEED
                     dx = r * math.cos(angle)
                     dy = r * math.sin(angle)
-                    new_position = {'X': self.last_position['X'] + dx, 'Y': self.last_position['Y'] + dy}
-                    new_direction = {'X': math.cos(angle), 'Y': math.sin(angle)}
-                    self.send({'Position': new_position, 'Direction': new_direction})
+                    new_position = {
+                        'X': self.last_position['X'] + dx, 'Y': self.last_position['Y'] + dy}
+                    new_direction = {'X': math.cos(
+                        angle), 'Y': math.sin(angle)}
+                    self.send({'Position': new_position,
+                              'Direction': new_direction})
             except Exception as e:
                 if self.verbose:
                     print(e)
@@ -92,7 +99,7 @@ class TestClient:
             self.sendt.daemon = True
             self.sendt.start()
             return
-        
+
         message = json.loads(message)
 
         self.last_position = message['Players'][self.id]['Position']
@@ -103,13 +110,14 @@ class TestClient:
             if self.verbose:
                 print('game ended', self.id)
             self.stop()
-            
+
         if self.verbose:
             print('message', self.id, message)
 
     def on_close(self, ws, close_status_code, close_msg):
         if self.verbose:
             print('close', self.id, close_status_code, close_msg)
+
 
 # %%
 N = 9

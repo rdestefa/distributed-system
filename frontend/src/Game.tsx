@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { throttle } from 'lodash';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {throttle} from 'lodash';
 //import {NavMesh} from 'navmesh';
 import Stage from './Stage';
 import {
@@ -9,7 +9,7 @@ import {
   keyMap,
   status,
 } from './gameState';
-import { loadImage } from './Util';
+import {loadImage} from './Util';
 import background from './background.png';
 import navmesh from './navmesh.json';
 
@@ -17,7 +17,7 @@ interface GameProps {
   username: string;
 }
 
-const movementSpeed: number = 3;
+const movementSpeed: number = 10;
 const keyMappings = keyMap;
 
 function determineDirection() {
@@ -51,10 +51,12 @@ function determineDirection() {
 const Game = (props: GameProps) => {
   const url = 'ws://localhost:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
-  const [thisPlayerId, setThisPlayerId] = useState<string>("");
+  const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
+  const [lastServerUpdate, setLastServerUpdate] = useState<number>(
+    new Date().valueOf()
+  );
   let currDir: number[] = [0, 0];
-  let lastServerUpdate: number = new Date().valueOf();
 
   /*const mapMesh = useMemo<NavMesh>(() => {
     return new NavMesh(navmesh);
@@ -99,7 +101,7 @@ const Game = (props: GameProps) => {
   const updateGameState = useCallback(
     (gameState: Record<string, any>) => {
       if (gameState.GameId === state.gameId) {
-        const newState: IGameState = { ...state };
+        const newState: IGameState = {...state};
 
         Object.entries(gameState.Players).forEach(
           ([key, val]: (string | any)[]) => {
@@ -134,15 +136,18 @@ const Game = (props: GameProps) => {
     const newY = currY + movementSpeed * dirY;
 
     // TODO: should we update the server before or after updating the client?
-    if (
-      [dirX, dirY] !== currDir ||
-      new Date().valueOf() - lastServerUpdate > 100
-    ) {
-      currDir = [dirX, dirY];
+    if ([dirX, dirY] !== currDir) {
+      const currDir: Record<string, number> = {
+        X: dirX,
+        Y: dirY,
+      };
 
-      const message: Record<string, number[] | string | Date | null> = {
+      const message: Record<string, any> = {
         PlayerId: state.thisPlayer.playerId,
-        Position: [newX, newY],
+        Position: {
+          X: newX,
+          Y: newY,
+        },
         Direction: currDir,
         Kill: null,
         Task: null,
@@ -152,12 +157,12 @@ const Game = (props: GameProps) => {
       console.log('Sending update', message);
 
       websocket?.current?.send(JSON.stringify(message));
-      setLastServerUpdate(new Date().valueOf())
+      setLastServerUpdate(new Date().valueOf());
     }
 
     setState({
       ...state,
-      thisPlayer: { ...state.thisPlayer, position: [newX, newY] },
+      thisPlayer: {...state.thisPlayer, position: [newX, newY]},
     });
   }
 
@@ -176,16 +181,16 @@ const Game = (props: GameProps) => {
         setGameStatus(status.LOBBY);
       };
 
-      websocket.current.onmessage = (message) => {  
-        if (thisPlayerId === "") {
-          console.log('Received player id', message.data)
+      websocket.current.onmessage = (message) => {
+        if (thisPlayerId === '') {
+          console.log('Received player id', message.data);
           setThisPlayerId(message.data);
-          return 
+          return;
         }
 
         const currState = JSON.parse(message.data);
 
-        console.log('Received state', currState)
+        console.log('Received state', currState);
 
         if (currState?.Status === 1) {
           if (gameStatus !== status.PLAYING) {
@@ -203,7 +208,13 @@ const Game = (props: GameProps) => {
         setGameStatus(status.ERROR);
       };
     }
-  }, [thisPlayerId, gameStatus, setThisPlayerId, constructInitialGameState, updateGameState]);
+  }, [
+    thisPlayerId,
+    gameStatus,
+    setThisPlayerId,
+    constructInitialGameState,
+    updateGameState,
+  ]);
 
   // Shouldn't close connection on every re-render, so use separate useEffect.
   useEffect(() => {
@@ -219,8 +230,18 @@ const Game = (props: GameProps) => {
 
       if (dirX || dirY) {
         updatePosition(dirX, dirY);
+      } else if (new Date().valueOf() - lastServerUpdate > 100) {
+        const message: Record<string, any> = {
+          PlayerId: state.thisPlayer.playerId,
+          Timestamp: new Date(),
+        };
+
+        console.log('Sending update', message);
+
+        websocket?.current?.send(JSON.stringify(message));
+        setLastServerUpdate(new Date().valueOf());
       }
-    }, 25);
+    }, 50);
 
     return () => clearInterval(interval);
   });
@@ -233,7 +254,7 @@ const Game = (props: GameProps) => {
       if (dirX || dirY) {
         updatePosition(dirX, dirY);
       }
-    }, 25);
+    }, 50);
 
     return () => clearInterval(interval);
   });
@@ -270,7 +291,15 @@ const Game = (props: GameProps) => {
       {gameStatus === status.LOADING && <h1>Loading...</h1>}
       {gameStatus === status.LOBBY && <h1>Waiting for game to start...</h1>}
       {gameStatus === status.PLAYING && (
-        <div style={{ overflow: 'hidden', width: '100vw', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+        <div
+          style={{
+            overflow: 'hidden',
+            width: '100vw',
+            height: '100vh',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
           <Stage
             maxWidth={1280}
             maxHeight={720}
