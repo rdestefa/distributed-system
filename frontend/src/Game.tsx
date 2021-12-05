@@ -17,7 +17,7 @@ interface GameProps {
   username: string;
 }
 
-const movementSpeed: number = 5;
+const movementSpeed: number = 3;
 const keyMappings = keyMap;
 
 function determineDirection() {
@@ -152,7 +152,7 @@ const Game = (props: GameProps) => {
       console.log('Sending update', message);
 
       websocket?.current?.send(JSON.stringify(message));
-      lastServerUpdate = new Date().valueOf();
+      setLastServerUpdate(new Date().valueOf())
     }
 
     setState({
@@ -164,9 +164,9 @@ const Game = (props: GameProps) => {
   // Establish WebSocket connection.
   useEffect(() => {
     if (!websocket.current) {
-      websocket.current = new WebSocket(`${url}?name=${props.username}?id=${thisPlayerId}`);
+      websocket.current = new WebSocket(`${url}?name=${props.username}`);
     }
-  }, [props.username, thisPlayerId]);
+  }, [props.username]);
 
   // Set up event handlers separately so state changes are properly observed.
   useEffect(() => {
@@ -193,6 +193,7 @@ const Game = (props: GameProps) => {
             setState(constructInitialGameState(currState));
             setGameStatus(status.PLAYING);
           } else {
+            console.log('Updating game');
             setState(updateGameState(currState));
           }
         }
@@ -280,7 +281,7 @@ const Game = (props: GameProps) => {
             windowWidth={320}
             windowHeight={180}
             backgroundColor={'black'}
-            gameState={state as IGameState}
+            gameState={state}
             keyDownHandler={handleKeyDown}
             keyUpHandler={handleKeyUp}
           />

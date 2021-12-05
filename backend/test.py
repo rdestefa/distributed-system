@@ -13,7 +13,7 @@ websocket.enableTrace(False)
 
 # %%
 
-MOVE_SPEED = 200.0
+MOVE_SPEED = 120.0
 
 class DateTimeJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -69,9 +69,9 @@ class TestClient:
                 else:
                     if same_direction == 0:
                         angle = 2 * math.pi * random.random()
-                    same_direction = (same_direction + 1) % 200
+                    same_direction = (same_direction + 1) % 10
                     duration = (datetime.datetime.utcnow() - self.last_message).total_seconds()
-                    r =  duration * MOVE_SPEED * math.sqrt(random.random())
+                    r =  duration * MOVE_SPEED
                     dx = r * math.cos(angle)
                     dy = r * math.sin(angle)
                     new_position = {'X': self.last_position['X'] + dx, 'Y': self.last_position['Y'] + dy}
@@ -81,7 +81,7 @@ class TestClient:
                 if self.verbose:
                     print(e)
                 return
-            time.sleep(0.01)
+            time.sleep(0.05)
 
     def on_message(self, _ws, message):
         if self.id == None:
