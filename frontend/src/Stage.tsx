@@ -82,6 +82,15 @@ const Stage = ({
           playerWidth,
           playerHeight
         );
+
+        context.fillStyle = '#000000';
+        context.font = 'bold small-caps 18pt cursive';
+        context.textAlign = 'center';
+        context.fillText(
+          gameState.thisPlayer.playerName,
+          canvasWidth / 2 - playerWidth / 2 + playerWidth / 2,
+          canvasHeight / 2 - playerHeight / 2 - 6
+        );
       });
       drawPromises.push(thisPlayerPromise);
 
@@ -105,6 +114,19 @@ const Stage = ({
                 playerHeight / 2,
               playerWidth,
               playerHeight
+            );
+
+            context.fillStyle = '#000000';
+            context.font = 'bold small-caps 18pt cursive';
+            context.textAlign = 'center';
+            context.fillText(
+              val.playerName,
+              canvasWidth / 2 +
+                (val.position[0] - stageX) * (canvasWidth / windowWidth),
+              canvasHeight / 2 +
+                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
+                playerHeight / 2 -
+                6
             );
           });
 

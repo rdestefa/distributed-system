@@ -76,4 +76,6 @@ export enum status {
   BOOTED,
   FINISHED,
   ERROR,
+  DISCONNECTED,
+  CONNECTION_FAILED,
 }

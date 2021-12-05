@@ -13,6 +13,7 @@ import background from './background.png';
 import polygons from './navmesh_polygon.json';
 interface GameProps {
   username: string;
+  loginHandler: React.MouseEventHandler<HTMLButtonElement>;
 }
 
 const movementSpeed: number = 10;
@@ -210,6 +211,14 @@ const Game = (props: GameProps) => {
         }
       };
 
+      websocket.current.onclose = () => {
+        if (gameStatus === status.LOADING) {
+          setGameStatus(status.CONNECTION_FAILED);
+        } else if (gameStatus !== status.FINISHED) {
+          setGameStatus(status.DISCONNECTED);
+        }
+      };
+
       websocket.current.onerror = () => {
         setGameStatus(status.ERROR);
       };
@@ -241,8 +250,6 @@ const Game = (props: GameProps) => {
           PlayerId: thisPlayerId,
           Timestamp: new Date(),
         };
-
-        console.log(thisPlayerId);
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
           console.log('Sending update', message);
@@ -290,12 +297,20 @@ const Game = (props: GameProps) => {
     [handleKeyDown]
   );
 
+  const handleReconnect = useCallback(() => {
+    if (websocket.current) {
+      websocket.current.close();
+    }
+
+    setGameStatus(status.LOADING);
+
+    websocket.current = new WebSocket(`${url}?name=${props.username}`);
+  }, [websocket, props.username]);
+
   // Load background image and polygon mesh for map.
   const backgroundImage = useMemo<Promise<HTMLImageElement>>(() => {
     return loadImage(background);
   }, []);
-
-  // Load polygon data for collision detection.
 
   return (
     <>
@@ -329,10 +344,31 @@ const Game = (props: GameProps) => {
       )}
       {gameStatus === status.KILLED && <h1>You have been killed</h1>}
       {gameStatus === status.FINISHED && (
-        <h1>The game has finished. Thanks for playing!</h1>
+        <>
+          <h1>The game has finished. Thanks for playing!</h1>
+          <button onClick={props.loginHandler}>Play Again</button>
+        </>
       )}
       {gameStatus === status.ERROR && (
-        <h1>Could not connect to / abruptly disconnected from {`${url}`}</h1>
+        <>
+          <h1>An unexpected error caused an abrupt disconnection</h1>
+          <h1>You have 30 seconds to reconnect or you will be removed</h1>
+          <button onClick={handleReconnect}>Reconnect</button>
+          <button onClick={props.loginHandler}>Back to Login</button>
+        </>
+      )}
+      {gameStatus === status.DISCONNECTED && (
+        <>
+          <h1>You have been disconnected</h1>
+          <button onClick={props.loginHandler}>Back to Login</button>
+        </>
+      )}
+      {gameStatus === status.CONNECTION_FAILED && (
+        <>
+          <h1>Failed to connect</h1>
+          <button onClick={handleReconnect}>Try Again</button>
+          <button onClick={props.loginHandler}>Back to Login</button>
+        </>
       )}
     </>
   );

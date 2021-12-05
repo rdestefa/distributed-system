@@ -1,9 +1,13 @@
-import React, {Suspense, useState} from 'react';
+import React, {Suspense, useCallback, useState} from 'react';
 import Game from './Game';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  const handleReturnToLogin = useCallback(() => {
+    setIsLoggedIn(false);
+  }, []);
 
   return (
     <div>
@@ -22,7 +26,7 @@ const Login = () => {
       )}
       {isLoggedIn && (
         <Suspense fallback={<h1>Loading...</h1>}>
-          <Game username={username} />
+          <Game username={username} loginHandler={handleReturnToLogin} />
         </Suspense>
       )}
     </div>
