@@ -1,6 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {throttle} from 'lodash';
-//import {NavMesh} from 'navmesh';
 import Stage from './Stage';
 import {
   IGameState,
@@ -11,8 +10,7 @@ import {
 } from './gameState';
 import {loadImage} from './Util';
 import background from './background.png';
-import polygons from './navmesh_polygon.png';
-
+import polygons from './navmesh_polygon.json';
 interface GameProps {
   username: string;
 }
@@ -55,10 +53,6 @@ const Game = (props: GameProps) => {
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
   const [lastServerUpdate, setLastServerUpdate] = useState<number>(0);
   let currDir: number[] = [0, 0];
-
-  /*const mapMesh = useMemo<NavMesh>(() => {
-    return new NavMesh(navmesh);
-  }, []);*/
 
   const constructInitialGameState = useCallback(
     (gameState: Record<string, any>) => {
@@ -130,8 +124,19 @@ const Game = (props: GameProps) => {
   function updatePosition(dirX: number, dirY: number) {
     const [currX, currY]: number[] = state.thisPlayer.position;
 
-    const newX = currX + movementSpeed * dirX;
-    const newY = currY + movementSpeed * dirY;
+    let newX = currX + movementSpeed * dirX;
+    let newY = currY + movementSpeed * dirY;
+
+    // Check for collisions and reject move if there is one.
+    if (
+      newX < 0 ||
+      newX > 1531 ||
+      newY < 0 ||
+      newY > 1053 ||
+      polygons.pixels[Math.trunc(newY)][Math.trunc(newX)][3] < 255
+    ) {
+      [newX, newY] = [currX, currY];
+    }
 
     // TODO: should we update the server before or after updating the client?
     if ([dirX, dirY] !== currDir) {
@@ -245,7 +250,7 @@ const Game = (props: GameProps) => {
           setLastServerUpdate(new Date().valueOf());
         }
       }
-    }, 50);
+    }, 25);
 
     return () => clearInterval(interval);
   });
@@ -258,7 +263,7 @@ const Game = (props: GameProps) => {
       if (dirX || dirY) {
         updatePosition(dirX, dirY);
       }
-    }, 50);
+    }, 25);
 
     return () => clearInterval(interval);
   });
@@ -266,9 +271,6 @@ const Game = (props: GameProps) => {
   const handleKeyDown = useCallback(
     // Throttle events to improve performance.
     throttle((event: React.KeyboardEvent<HTMLCanvasElement>) => {
-      console.log(
-        meshRef.current?.getContext('2d')?.getImageData(300, 300, 0, 0)
-      );
       if (event.code in keyMappings) {
         keyMappings[event.code].pressed = true;
       }
@@ -289,37 +291,11 @@ const Game = (props: GameProps) => {
   );
 
   // Load background image and polygon mesh for map.
-  const [backgroundImage, mesh] = useMemo<Promise<HTMLImageElement>[]>(() => {
-    return [loadImage(background), loadImage(polygons)];
+  const backgroundImage = useMemo<Promise<HTMLImageElement>>(() => {
+    return loadImage(background);
   }, []);
 
-  // Draw background polygons.
-  const meshRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const context: CanvasRenderingContext2D | null | undefined =
-      meshRef.current?.getContext('2d');
-
-    if (context) {
-      context.beginPath();
-
-      const drawPromises: Promise<Function>[] = [];
-
-      const backgroundImagePromise = mesh.then((bgImg) => {
-        return () => {
-          context.drawImage(bgImg, 0, 0);
-        };
-      });
-      drawPromises.push(backgroundImagePromise);
-
-      Promise.all(drawPromises)
-        .then((draws) => {
-          draws.forEach((draw) => draw());
-        })
-        .catch((err) => {
-          console.error(err);
-        });
-    }
-  }, [mesh]);
+  // Load polygon data for collision detection.
 
   return (
     <>
