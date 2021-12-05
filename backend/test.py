@@ -91,7 +91,8 @@ class TestClient:
             time.sleep(0.05)
 
     def on_message(self, _ws, message):
-        if self.id == None:
+        message = json.loads(message)
+        if type(message) == str:
             self.id = message
             if self.verbose:
                 print('id', self.id)

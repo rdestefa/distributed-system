@@ -49,13 +49,11 @@ function determineDirection() {
 }
 
 const Game = (props: GameProps) => {
-  const url = 'ws://10.26.247.169:10000/connect';
+  const url = 'ws://localhost:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
-  const [lastServerUpdate, setLastServerUpdate] = useState<number>(
-    new Date().valueOf()
-  );
+  const [lastServerUpdate, setLastServerUpdate] = useState<number>(0);
   let currDir: number[] = [0, 0];
 
   /*const mapMesh = useMemo<NavMesh>(() => {
@@ -143,7 +141,7 @@ const Game = (props: GameProps) => {
       };
 
       const message: Record<string, any> = {
-        PlayerId: state.thisPlayer.playerId,
+        PlayerId: thisPlayerId,
         Position: {
           X: newX,
           Y: newY,
@@ -154,13 +152,13 @@ const Game = (props: GameProps) => {
         Timestamp: new Date(),
       };
 
-      console.log('Sending update', message);
+      console.log(thisPlayerId);
 
       if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+        console.log('Sending update', message);
         websocket?.current?.send(JSON.stringify(message));
+        setLastServerUpdate(new Date().valueOf());
       }
-
-      setLastServerUpdate(new Date().valueOf());
     }
 
     setState({
@@ -185,13 +183,13 @@ const Game = (props: GameProps) => {
       };
 
       websocket.current.onmessage = (message) => {
-        if (thisPlayerId === '') {
-          console.log('Received player id', message.data);
-          setThisPlayerId(message.data);
+        const currState = JSON.parse(message.data);
+
+        if (typeof currState === 'string' || currState instanceof String) {
+          console.log('Received player id', currState);
+          setThisPlayerId(currState as string);
           return;
         }
-
-        const currState = JSON.parse(message.data);
 
         console.log('Received state', currState);
 
@@ -235,17 +233,17 @@ const Game = (props: GameProps) => {
         updatePosition(dirX, dirY);
       } else if (new Date().valueOf() - lastServerUpdate > 100) {
         const message: Record<string, any> = {
-          PlayerId: state.thisPlayer.playerId,
+          PlayerId: thisPlayerId,
           Timestamp: new Date(),
         };
 
-        console.log('Sending update', message);
+        console.log(thisPlayerId);
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+          console.log('Sending update', message);
           websocket?.current?.send(JSON.stringify(message));
+          setLastServerUpdate(new Date().valueOf());
         }
-
-        setLastServerUpdate(new Date().valueOf());
       }
     }, 50);
 

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"image"
 	"math"
 	"math/rand"
 	"strconv"
@@ -12,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	_ "embed"
+	_ "image/png"
 )
 
 // Enum type to describe the state of the game.
@@ -75,13 +78,12 @@ type gameUpdate struct {
 
 var (
 	// the following directive loads the file from disk or embeds into the binary when compiling
-	//go:embed navmesh.json
-	NAVMESH_BYTES  []byte
-	NAVMESH_POINTS [][]Vector
-	NAVMESH        Navmesh
-	LIMITS         = Vector{X: 1531, Y: 1053}
-	START_CENTER   = Vector{X: 818, Y: 294}
-	COLORS         = []string{"D71E22", "1D3CE9", "1B913E", "FF63D4", "FF8D1C", "FFFF67", "4A565E", "E9F7FF", "783DD2", "80582D"}
+	//go:embed navmesh.png
+	NAVMESH_PNG  []byte
+	NAVMESH_IMG  image.Image
+	LIMITS       = Vector{X: 1531, Y: 1053}
+	START_CENTER = Vector{X: 818, Y: 294}
+	COLORS       = []string{"D71E22", "1D3CE9", "1B913E", "FF63D4", "FF8D1C", "FFFF67", "4A565E", "E9F7FF", "783DD2", "80582D"}
 )
 
 const (
@@ -92,10 +94,16 @@ const (
 )
 
 func init() {
-	if err := json.Unmarshal(NAVMESH_BYTES, &NAVMESH_POINTS); err != nil {
+	img, _, err := image.Decode(bytes.NewReader(NAVMESH_PNG))
+	if err != nil {
 		panic(err)
 	}
-	NAVMESH = *newNavmesh(NAVMESH_POINTS)
+	NAVMESH_IMG = img
+}
+
+func checkNavmesh(v *Vector) bool {
+	_, _, _, alpha := NAVMESH_IMG.At(int(v.X), int(v.Y)).RGBA()
+	return alpha != 0
 }
 
 func newGame(toserver chan *serverUpdate) *game {
@@ -125,8 +133,8 @@ func newPlayer(name string) *Player {
 		IsAlive:     true,
 		IsImpostor:  false,
 		IsConnected: true,
-		Position:    ZERO_VECTOR,
-		Direction:   ZERO_VECTOR,
+		Position:    START_CENTER,
+		Direction:   START_CENTER,
 		LastHeard:   Time{time.Now()},
 	}
 
@@ -172,9 +180,8 @@ func (g *game) watch() {
 	}
 }
 
-func (g *game) sendUpdate() bool {
+func (g *game) sendUpdate() {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 
 	endgame := g.inEndOfGame()
 
@@ -186,9 +193,18 @@ func (g *game) sendUpdate() bool {
 		}
 	}
 
+	// marshall game state to free game lock
+	marshalledGameState, err := json.Marshal(g.GameState)
+	if err != nil {
+		ErrorLogger.Println("sendUpdate failed to marshall game state")
+		return
+	}
+
+	g.mu.Unlock()
+
 	// send snapshot of game state to those players
 	u := &serverUpdate{
-		gameState: &g.GameState,
+		gameState: marshalledGameState,
 		playerIds: playerIds,
 	}
 	if endgame {
@@ -198,8 +214,6 @@ func (g *game) sendUpdate() bool {
 	DebugLogger.Println("Send update", u)
 
 	g.toserver <- u
-
-	return endgame
 }
 
 func (g *game) performAction(a *Action) {
@@ -230,6 +244,11 @@ func (g *game) performAction(a *Action) {
 		distanceSquared := a.Position.squaredDistance(p.Position)
 		if distanceSquared > maxDistanceSquared {
 			WarnLogger.Println("performAction detected excessive movement from player:", a.PlayerId)
+			goto PositionNoOp
+		}
+
+		if !checkNavmesh(&p.Position) {
+			WarnLogger.Println("performAction detected out of bounds move from player:", a.PlayerId)
 			goto PositionNoOp
 		}
 
@@ -279,6 +298,14 @@ KillNoOp:
 		goto TaskNoOp
 	}
 TaskNoOp:
+
+	// TODO: update lastheard
+	p, ok := g.Players[a.PlayerId]
+	if ok {
+		p.LastHeard = Time{time.Now()}
+	} else {
+		ErrorLogger.Println("performAction could not find player:", a.PlayerId)
+	}
 }
 
 func (g *game) disconnectPlayer(playerId string) {
@@ -324,6 +351,9 @@ func (g *game) checkEndOfGame() {
 	}
 
 	// TODO: check for all tasks completed
+	if len(g.CompletedTasks) == 5 {
+		g.Status = CREWMATES_WIN
+	}
 }
 
 func (g *game) inEndOfGame() bool {

@@ -66,7 +66,7 @@ func newpolygon(points []Vector) *polygon {
 	}
 
 	if !closed {
-		poly.Points = append(poly.Points, poly.Points[len(poly.Points)-1])
+		poly.Points = append(poly.Points, poly.Points[0])
 	}
 
 	if len(poly.Points) <= 3 {

@@ -36,7 +36,7 @@ type client struct {
 }
 
 type serverUpdate struct {
-	gameState *GameState
+	gameState []byte
 	playerIds []string
 	endgame   *game
 }
@@ -129,11 +129,19 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 		return err
 	}
 
+	// build message with id
+	idMsg, err := json.Marshal(c.player.PlayerId)
+	if err != nil {
+		close(c.out)
+		c.conn.Close(websocket.StatusTryAgainLater, err.Error())
+		return err
+	}
+
 	c.game = s.nextGame
 	s.clients[c.player.PlayerId] = c
 
 	// inform client of its id
-	if err := writeTimeout(ctx, 1*time.Second, conn, []byte(c.player.PlayerId)); err != nil {
+	if err := writeTimeout(ctx, 1*time.Second, conn, []byte(idMsg)); err != nil {
 		close(c.out)
 		delete(s.clients, c.player.PlayerId)
 		c.conn.Close(websocket.StatusPolicyViolation, err.Error())
@@ -227,15 +235,7 @@ func (s *server) clientWriter(ctx context.Context, c *client) {
 // watch listens to server updates from other threads and broadcasts them to appropriate players
 func (s *server) watch() {
 	for u := range s.inbox {
-		if u.gameState != nil {
-			content, err := json.Marshal(u.gameState)
-			if err != nil {
-				ErrorLogger.Println("Watch failed to marshall game state")
-			} else {
-				s.broadcastMessage(message{content: content, last: u.endgame != nil}, u.playerIds)
-			}
-		}
-
+		s.broadcastMessage(message{content: u.gameState, last: u.endgame != nil}, u.playerIds)
 		if u.endgame != nil {
 			InfoLogger.Println("Going to end game for players:", u.playerIds)
 			s.endGameForPlayers(u.playerIds, u.endgame)
