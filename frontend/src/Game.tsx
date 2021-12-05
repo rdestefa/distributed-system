@@ -11,7 +11,7 @@ import {
 } from './gameState';
 import {loadImage} from './Util';
 import background from './background.png';
-import navmesh from './navmesh.json';
+import polygons from './navmesh_polygon.png';
 
 interface GameProps {
   username: string;
@@ -49,7 +49,7 @@ function determineDirection() {
 }
 
 const Game = (props: GameProps) => {
-  const url = 'ws://localhost:10000/connect';
+  const url = 'ws://10.26.247.169:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
@@ -156,7 +156,10 @@ const Game = (props: GameProps) => {
 
       console.log('Sending update', message);
 
-      websocket?.current?.send(JSON.stringify(message));
+      if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+        websocket?.current?.send(JSON.stringify(message));
+      }
+
       setLastServerUpdate(new Date().valueOf());
     }
 
@@ -194,7 +197,7 @@ const Game = (props: GameProps) => {
 
         if (currState?.Status === 1) {
           if (gameStatus !== status.PLAYING) {
-            console.log('Stating game');
+            console.log('Starting game');
             setState(constructInitialGameState(currState));
             setGameStatus(status.PLAYING);
           } else {
@@ -238,7 +241,10 @@ const Game = (props: GameProps) => {
 
         console.log('Sending update', message);
 
-        websocket?.current?.send(JSON.stringify(message));
+        if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+          websocket?.current?.send(JSON.stringify(message));
+        }
+
         setLastServerUpdate(new Date().valueOf());
       }
     }, 50);
@@ -262,6 +268,9 @@ const Game = (props: GameProps) => {
   const handleKeyDown = useCallback(
     // Throttle events to improve performance.
     throttle((event: React.KeyboardEvent<HTMLCanvasElement>) => {
+      console.log(
+        meshRef.current?.getContext('2d')?.getImageData(300, 300, 0, 0)
+      );
       if (event.code in keyMappings) {
         keyMappings[event.code].pressed = true;
       }
@@ -281,10 +290,38 @@ const Game = (props: GameProps) => {
     [handleKeyDown]
   );
 
-  // Load background image for map.
-  const backgroundImage = useMemo<Promise<HTMLImageElement>>(() => {
-    return loadImage(background);
+  // Load background image and polygon mesh for map.
+  const [backgroundImage, mesh] = useMemo<Promise<HTMLImageElement>[]>(() => {
+    return [loadImage(background), loadImage(polygons)];
   }, []);
+
+  // Draw background polygons.
+  const meshRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const context: CanvasRenderingContext2D | null | undefined =
+      meshRef.current?.getContext('2d');
+
+    if (context) {
+      context.beginPath();
+
+      const drawPromises: Promise<Function>[] = [];
+
+      const backgroundImagePromise = mesh.then((bgImg) => {
+        return () => {
+          context.drawImage(bgImg, 0, 0);
+        };
+      });
+      drawPromises.push(backgroundImagePromise);
+
+      Promise.all(drawPromises)
+        .then((draws) => {
+          draws.forEach((draw) => draw());
+        })
+        .catch((err) => {
+          console.error(err);
+        });
+    }
+  }, [mesh]);
 
   return (
     <>
