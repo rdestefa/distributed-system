@@ -315,7 +315,7 @@ TaskNoOp:
 	// TODO: update lastheard
 	p, ok := g.Players[a.PlayerId]
 	if ok {
-		p.LastHeard = Time{time.Now()}
+		p.LastHeard = Time(a.Timestamp)
 	} else {
 		ErrorLogger.Println("performAction could not find player:", a.PlayerId)
 	}

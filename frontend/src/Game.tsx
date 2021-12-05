@@ -4,7 +4,9 @@ import Stage from './Stage';
 import {
   IGameState,
   IPlayerState,
+  TaskState,
   initialGameState,
+  initialTasks,
   keyMap,
   status,
 } from './gameState';
@@ -53,6 +55,8 @@ const Game = (props: GameProps) => {
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
   const [lastServerUpdate, setLastServerUpdate] = useState<number>(0);
+  const [currentTasks, setCurrentTasks] =
+    useState<Record<string, TaskState>>(initialTasks);
   let currDir: number[] = [0, 0];
 
   const constructInitialGameState = useCallback(
@@ -71,6 +75,8 @@ const Game = (props: GameProps) => {
             isAlive: val.IsAlive,
             isImpostor: val.IsImpostor,
             position: [val.Position.X, val.Position.Y],
+            direction: [val.Direction.X, val.Direction.Y],
+            lastHeard: new Date().valueOf(),
           };
 
           if (key === thisPlayerId) {
@@ -103,12 +109,16 @@ const Game = (props: GameProps) => {
                 ...newState.thisPlayer,
                 isAlive: val.IsAlive,
                 position: [val.Position.X, val.Position.Y],
+                direction: [val.Direction.X, val.Direction.Y],
+                lastHeard: Date.parse(val.LastHeard),
               };
             } else {
               newState.otherPlayers[key] = {
                 ...newState.otherPlayers[key],
                 isAlive: val.IsAlive,
                 position: [val.Position.X, val.Position.Y],
+                direction: [val.Direction.X, val.Direction.Y],
+                lastHeard: Date.parse(val.LastHeard),
               };
             }
           }
@@ -122,11 +132,15 @@ const Game = (props: GameProps) => {
     [thisPlayerId, state]
   );
 
-  function updatePosition(dirX: number, dirY: number) {
-    const [currX, currY]: number[] = state.thisPlayer.position;
-
+  function determineNewPosition(
+    currX: number,
+    currY: number,
+    dirX: number,
+    dirY: number,
+    lastUpdate: number
+  ) {
     const newUpdateTime = new Date().valueOf();
-    const duration = (newUpdateTime - lastServerUpdate)/1000.0;
+    const duration = (newUpdateTime - lastUpdate) / 1000.0;
 
     let newX = currX + movementSpeed * duration * dirX;
     let newY = currY + movementSpeed * duration * dirY;
@@ -141,6 +155,20 @@ const Game = (props: GameProps) => {
     ) {
       [newX, newY] = [currX, currY];
     }
+
+    return [newX, newY, newUpdateTime];
+  }
+
+  function updatePosition(dirX: number, dirY: number) {
+    const [currX, currY]: number[] = state.thisPlayer.position;
+
+    let [newX, newY, newUpdateTime] = determineNewPosition(
+      currX,
+      currY,
+      dirX,
+      dirY,
+      lastServerUpdate
+    );
 
     // TODO: should we update the server before or after updating the client?
     if ([dirX, dirY] !== currDir) {
@@ -161,8 +189,6 @@ const Game = (props: GameProps) => {
         Timestamp: new Date(),
       };
 
-      console.log(thisPlayerId);
-
       if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
         console.log('Sending update', message);
         websocket?.current?.send(JSON.stringify(message));
@@ -174,6 +200,28 @@ const Game = (props: GameProps) => {
       ...state,
       thisPlayer: {...state.thisPlayer, position: [newX, newY]},
     });
+  }
+
+  function predictOtherPlayerMovement() {
+    const newState: IGameState = {...state};
+    Object.entries(state.otherPlayers).forEach(([key, val]) => {
+      const [currX, currY, dirX, dirY] = [...val.position, ...val.direction];
+
+      let [newX, newY] = determineNewPosition(
+        currX,
+        currY,
+        dirX,
+        dirY,
+        val.lastHeard
+      );
+
+      newState.otherPlayers[key] = {
+        ...newState.otherPlayers[key],
+        position: [newX, newY],
+      };
+    });
+
+    setState(newState);
   }
 
   // Establish WebSocket connection.
@@ -241,10 +289,11 @@ const Game = (props: GameProps) => {
     return () => currentWebsocket?.close();
   }, [websocket]);
 
-  // Set up timer to ping
+  // Set up timer to ping.
   useEffect(() => {
     const interval = setInterval(() => {
       const [dirX, dirY]: number[] = determineDirection();
+      predictOtherPlayerMovement();
 
       if (dirX || dirY) {
         updatePosition(dirX, dirY);
@@ -259,19 +308,6 @@ const Game = (props: GameProps) => {
           websocket?.current?.send(JSON.stringify(message));
           setLastServerUpdate(new Date().valueOf());
         }
-      }
-    }, 25);
-
-    return () => clearInterval(interval);
-  });
-
-  // Set up timer to check for movement
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const [dirX, dirY]: number[] = determineDirection();
-
-      if (dirX || dirY) {
-        updatePosition(dirX, dirY);
       }
     }, 25);
 
@@ -300,12 +336,26 @@ const Game = (props: GameProps) => {
     [handleKeyDown]
   );
 
+  function handleReturnToLogin(event: any) {
+    setGameStatus(status.LOADING);
+    setState((gameState) => {
+      for (const key in gameState.otherPlayers) {
+        if (gameState.otherPlayers.hasOwnProperty(key)) {
+          delete gameState.otherPlayers[key];
+        }
+      }
+      return gameState;
+    });
+    props.loginHandler(event);
+  }
+
   const handleReconnect = useCallback(() => {
     if (websocket.current) {
       websocket.current.close();
     }
 
     setGameStatus(status.LOADING);
+    setState((state) => ((state.otherPlayers = {}), state));
 
     websocket.current = new WebSocket(`${url}?name=${props.username}`);
   }, [websocket, props.username]);
@@ -320,36 +370,47 @@ const Game = (props: GameProps) => {
       {gameStatus === status.LOADING && <h1>Loading...</h1>}
       {gameStatus === status.LOBBY && <h1>Waiting for game to start...</h1>}
       {gameStatus === status.PLAYING && (
-        <div
-          style={{
-            overflow: 'hidden',
-            width: '100vw',
-            height: '100vh',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}>
-          <Stage
-            maxWidth={1280}
-            maxHeight={720}
-            stageWidth={1531}
-            stageHeight={1053}
-            stageBackground={backgroundImage}
-            stageCenter={state.thisPlayer.position as [number, number]}
-            windowWidth={320}
-            windowHeight={180}
-            backgroundColor={'black'}
-            gameState={state}
-            keyDownHandler={handleKeyDown}
-            keyUpHandler={handleKeyUp}
-          />
-        </div>
+        <>
+          <div
+            id="stage"
+            style={{
+              overflow: 'hidden',
+              width: 'auto',
+              height: 'auto',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}>
+            <Stage
+              maxWidth={1280}
+              maxHeight={720}
+              stageWidth={1531}
+              stageHeight={1053}
+              stageBackground={backgroundImage}
+              stageCenter={state.thisPlayer.position as [number, number]}
+              windowWidth={320}
+              windowHeight={180}
+              taskRadius={60}
+              backgroundColor={'black'}
+              gameState={state as IGameState}
+              tasksState={currentTasks as Record<string, TaskState>}
+              keyDownHandler={handleKeyDown}
+              keyUpHandler={handleKeyUp}
+            />
+          </div>
+          <div id="info">
+            <h1>
+              You are a{!state.thisPlayer.isImpostor && ' Crewmate'}
+              {state.thisPlayer.isImpostor && 'n Impostor'}
+            </h1>
+          </div>
+        </>
       )}
       {gameStatus === status.KILLED && <h1>You have been killed</h1>}
       {gameStatus === status.FINISHED && (
         <>
           <h1>The game has finished. Thanks for playing!</h1>
-          <button onClick={props.loginHandler}>Play Again</button>
+          <button onClick={handleReturnToLogin}>Play Again</button>
         </>
       )}
       {gameStatus === status.ERROR && (
@@ -357,20 +418,20 @@ const Game = (props: GameProps) => {
           <h1>An unexpected error caused an abrupt disconnection</h1>
           <h1>You have 30 seconds to reconnect or you will be removed</h1>
           <button onClick={handleReconnect}>Reconnect</button>
-          <button onClick={props.loginHandler}>Back to Login</button>
+          <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
       )}
       {gameStatus === status.DISCONNECTED && (
         <>
           <h1>You have been disconnected</h1>
-          <button onClick={props.loginHandler}>Back to Login</button>
+          <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
       )}
       {gameStatus === status.CONNECTION_FAILED && (
         <>
           <h1>Failed to connect</h1>
           <button onClick={handleReconnect}>Try Again</button>
-          <button onClick={props.loginHandler}>Back to Login</button>
+          <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
       )}
     </>
