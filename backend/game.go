@@ -247,7 +247,7 @@ func (g *game) performAction(a *Action) {
 			goto PositionNoOp
 		}
 
-		if !checkNavmesh(&p.Position) {
+		if !checkNavmesh(a.Position) {
 			WarnLogger.Println("performAction detected out of bounds move from player:", a.PlayerId)
 			goto PositionNoOp
 		}

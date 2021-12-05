@@ -13,6 +13,8 @@ websocket.enableTrace(False)
 
 # %%
 
+NAVMESH = json.load(open('navmesh.json', 'r'))
+
 MOVE_SPEED = 120.0
 
 
@@ -70,18 +72,40 @@ class TestClient:
                 if not self.game_started or not self.alive:
                     self.send({})
                 else:
+                    giveup = 100
                     if same_direction == 0:
                         angle = 2 * math.pi * random.random()
-                    same_direction = (same_direction + 1) % 10
-                    duration = (datetime.datetime.utcnow() -
-                                self.last_message).total_seconds()
-                    r = duration * MOVE_SPEED
-                    dx = r * math.cos(angle)
-                    dy = r * math.sin(angle)
+                    move_invalid = True
+                    while move_invalid and giveup > 0:
+                        same_direction = (same_direction + 1) % 10
+                        duration = (datetime.datetime.utcnow() -
+                                    self.last_message).total_seconds()
+                        r = duration * MOVE_SPEED
+                        dx = r * math.cos(angle)
+                        dy = r * math.sin(angle)
+                        newX = self.last_position['X'] + dx,
+                        newY = self.last_position['Y'] + dy
+                        dirX = math.cos(angle)
+                        dirY = math.sin(angle)
+                        move_invalid = NAVMESH[int(newY)][int(newX)]
+                        if move_invalid:
+                            giveup -= 1
+                            angle = 2 * math.pi * random.random()
+
+                    if giveup == 0:
+                        newX = self.last_position['X']
+                        newY = self.last_position['Y']
+                        dirX = 0
+                        dirY = 0
+
                     new_position = {
-                        'X': self.last_position['X'] + dx, 'Y': self.last_position['Y'] + dy}
-                    new_direction = {'X': math.cos(
-                        angle), 'Y': math.sin(angle)}
+                        'X': newX,
+                        'Y': newY,
+                    }
+                    new_direction = {
+                        'X': dirX,
+                        'Y': dirY,
+                    }
                     self.send({'Position': new_position,
                               'Direction': new_direction})
             except Exception as e:
