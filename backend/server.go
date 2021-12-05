@@ -149,6 +149,8 @@ func (s *server) connect(ctx context.Context, conn *websocket.Conn, name string)
 
 	c.rwTerminate = cancel
 
+	c.rwWg.Add(2)
+
 	go s.clientReader(rwCtx, c)
 	go s.clientWriter(rwCtx, c)
 
@@ -164,8 +166,6 @@ func (s *server) clientReader(ctx context.Context, c *client) {
 		// TODO: check if we just want a normal closure or what
 		// c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
-
-	c.rwWg.Add(1)
 
 	for {
 		a, err := readTimeout(ctx, 1*time.Second, c.conn)
@@ -199,8 +199,6 @@ func (s *server) clientWriter(ctx context.Context, c *client) {
 		// TODO: check if we just want a normal closure or what
 		// c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
-
-	c.rwWg.Add(1)
 
 	for {
 		select {
@@ -247,15 +245,20 @@ func (s *server) watch() {
 
 // endGame
 func (s *server) endGameForPlayers(playerIds []string, game *game) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	clients := make([]*client, 0, len(playerIds))
 
+	s.mu.Lock()
 	for _, playerId := range playerIds {
 		if c, ok := s.clients[playerId]; ok {
-			c.rwWg.Wait()
+			clients = append(clients, c)
 		} else {
 			InfoLogger.Println("End game for players: client", playerId, "not found")
 		}
+	}
+	s.mu.Unlock()
+
+	for _, c := range clients {
+		c.rwWg.Wait()
 	}
 
 	InfoLogger.Println("Sending quit game:", game.GameId)

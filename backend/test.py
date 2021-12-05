@@ -3,7 +3,6 @@ import websocket
 import threading
 import json
 from pprint import pprint
-from IPython.display import clear_output
 import time
 import datetime
 import math
@@ -14,7 +13,7 @@ websocket.enableTrace(False)
 
 # %%
 
-MOVE_SPEED = 100.0
+MOVE_SPEED = 200.0
 
 class DateTimeJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -62,13 +61,16 @@ class TestClient:
         self.last_message = now
 
     def send_updates(self):
+        same_direction = 0
         while True:
             try:
                 if not self.game_started or not self.alive:
                     self.send({})
                 else:
+                    if same_direction == 0:
+                        angle = 2 * math.pi * random.random()
+                    same_direction = (same_direction + 1) % 200
                     duration = (datetime.datetime.utcnow() - self.last_message).total_seconds()
-                    angle = 2 * math.pi * random.random()
                     r =  duration * MOVE_SPEED * math.sqrt(random.random())
                     dx = r * math.cos(angle)
                     dy = r * math.sin(angle)
