@@ -65,6 +65,7 @@ type Time struct {
 type game struct {
 	GameState
 
+	sentLast bool
 	inbox    chan *gameUpdate
 	toserver chan *serverUpdate
 	mu       sync.RWMutex
@@ -118,6 +119,7 @@ func newGame(toserver chan *serverUpdate) *game {
 			CompletedTasks: make(map[string]interface{}),
 		},
 
+		sentLast: false,
 		inbox:    make(chan *gameUpdate, 16),
 		toserver: toserver,
 	}
@@ -203,16 +205,24 @@ func (g *game) sendUpdate() {
 		return
 	}
 
-	g.mu.Unlock()
-
 	// send snapshot of game state to those players
 	u := &serverUpdate{
 		gameState: marshalledGameState,
 		playerIds: playerIds,
 	}
+
 	if endgame {
-		u.endgame = g
+		if !g.sentLast {
+			g.sentLast = true
+			u.endgame = g
+		} else {
+			DebugLogger.Println("Skipping post-game update, already sent", u)
+			g.mu.Unlock()
+			return
+		}
 	}
+
+	g.mu.Unlock()
 
 	DebugLogger.Println("Send update", u)
 
