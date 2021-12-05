@@ -14,7 +14,7 @@ const Login = () => {
       {!isLoggedIn && (
         <form onSubmit={() => setIsLoggedIn(true)}>
           <label>
-            Enter username:
+            <h1>Enter your name:</h1>
             <input
               value={username}
               onChange={(event) => setUsername(event.target.value)}

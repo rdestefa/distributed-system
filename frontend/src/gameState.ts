@@ -12,11 +12,18 @@ export interface IPlayerState {
   isAlive: boolean;
   isImpostor?: boolean;
   position: [number, number];
+  direction: [number, number];
+  lastHeard: number;
 }
 
 export interface KeyState {
   pressed: boolean;
   dir: number[];
+}
+
+export interface TaskState {
+  position: [number, number];
+  done: boolean;
 }
 
 export const initialGameState: IGameState = {
@@ -28,6 +35,8 @@ export const initialGameState: IGameState = {
     isAlive: false,
     isImpostor: false,
     position: [0, 0],
+    direction: [0, 0],
+    lastHeard: new Date().valueOf(),
   },
   otherPlayers: {},
   completedTasks: new Set(),
@@ -65,6 +74,33 @@ export const keyMap: Record<string, KeyState> = {
   KeyA: {
     pressed: false,
     dir: [-90, 0],
+  },
+};
+
+export const initialTasks: Record<string, TaskState> = {
+  task6: {
+    position: [930, 335],
+    done: false,
+  },
+  task0: {
+    position: [87, 663],
+    done: false,
+  },
+  task1: {
+    position: [597, 701],
+    done: false,
+  },
+  task2: {
+    position: [987, 965],
+    done: false,
+  },
+  task3: {
+    position: [1055, 677],
+    done: false,
+  },
+  task4: {
+    position: [1435, 517],
+    done: false,
   },
 };
 

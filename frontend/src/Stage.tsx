@@ -1,5 +1,5 @@
 import React from 'react';
-import {IGameState} from './gameState';
+import {IGameState, TaskState} from './gameState';
 
 interface StageProps {
   maxWidth: number;
@@ -11,7 +11,9 @@ interface StageProps {
   windowWidth: number;
   windowHeight: number;
   backgroundColor: string;
+  taskRadius: number;
   gameState: IGameState;
+  tasksState: Record<string, TaskState>;
   keyDownHandler: React.KeyboardEventHandler<HTMLCanvasElement>;
   keyUpHandler: React.KeyboardEventHandler<HTMLCanvasElement>;
 }
@@ -25,8 +27,10 @@ const Stage = ({
   stageCenter,
   windowWidth,
   windowHeight,
+  taskRadius,
   backgroundColor,
   gameState,
+  tasksState,
   keyDownHandler,
   keyUpHandler,
 }: StageProps) => {
@@ -70,9 +74,55 @@ const Stage = ({
       });
       drawPromises.push(backgroundImagePromise);
 
+      // Tasks
+      Object.entries(tasksState).forEach(([key, val]) => {
+        if (
+          !val.done &&
+          val.position[0] > left &&
+          val.position[0] < left + windowWidth + 2 * taskRadius &&
+          val.position[1] > top &&
+          val.position[1] < top + windowHeight + 2 * taskRadius
+        ) {
+          const taskPromise = Promise.resolve(() => {
+            const circle = new Path2D();
+
+            circle.arc(
+              canvasWidth / 2 +
+                (val.position[0] - stageX) * (canvasWidth / windowWidth) -
+                taskRadius,
+              canvasHeight / 2 +
+                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
+                taskRadius,
+              taskRadius,
+              0,
+              2 * Math.PI
+            );
+
+            context.fillStyle = '#FFFFFF';
+            context.fill(circle);
+
+            context.fillStyle = '#000000';
+            context.font = 'bold small-caps 18pt cursive';
+            context.textAlign = 'center';
+            context.fillText(
+              key,
+              canvasWidth / 2 +
+                (val.position[0] - stageX) * (canvasWidth / windowWidth) -
+                taskRadius,
+              canvasHeight / 2 +
+                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
+                (7 * taskRadius) / 8
+            );
+          });
+
+          drawPromises.push(taskPromise);
+        }
+      });
+
       const playerWidth = 16 * (canvasWidth / windowWidth);
       const playerHeight = 24 * (canvasHeight / windowHeight);
 
+      // User
       const thisPlayerPromise = Promise.resolve(() => {
         context.fillStyle = gameState.thisPlayer.color;
 
@@ -97,10 +147,10 @@ const Stage = ({
       // Other players.
       Object.entries(gameState.otherPlayers).forEach(([key, val]) => {
         if (
-          val.position[0] > left &&
-          val.position[0] < left + windowWidth &&
-          val.position[1] > top &&
-          val.position[1] < top + windowHeight
+          val.position[0] + playerWidth / 2 > left &&
+          val.position[0] < left + windowWidth + playerWidth / 2 &&
+          val.position[1] + playerHeight / 2 > top &&
+          val.position[1] < top + windowHeight + playerHeight / 2
         ) {
           const otherPlayerPromise = Promise.resolve(() => {
             context.fillStyle = val.color;
@@ -154,7 +204,9 @@ const Stage = ({
     top,
     windowHeight,
     windowWidth,
+    taskRadius,
     gameState,
+    tasksState,
   ]);
 
   return (
