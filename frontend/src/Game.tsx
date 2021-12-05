@@ -10,13 +10,13 @@ import {
 } from './gameState';
 import {loadImage} from './Util';
 import background from './background.png';
-import polygons from './navmesh_polygon.json';
+import navmesh from './navmesh.json';
 interface GameProps {
   username: string;
   loginHandler: React.MouseEventHandler<HTMLButtonElement>;
 }
 
-const movementSpeed: number = 10;
+const movementSpeed: number = 120.0;
 const keyMappings = keyMap;
 
 function determineDirection() {
@@ -125,8 +125,11 @@ const Game = (props: GameProps) => {
   function updatePosition(dirX: number, dirY: number) {
     const [currX, currY]: number[] = state.thisPlayer.position;
 
-    let newX = currX + movementSpeed * dirX;
-    let newY = currY + movementSpeed * dirY;
+    const newUpdateTime = new Date().valueOf();
+    const duration = (newUpdateTime - lastServerUpdate)/1000.0;
+
+    let newX = currX + movementSpeed * duration * dirX;
+    let newY = currY + movementSpeed * duration * dirY;
 
     // Check for collisions and reject move if there is one.
     if (
@@ -134,7 +137,7 @@ const Game = (props: GameProps) => {
       newX > 1531 ||
       newY < 0 ||
       newY > 1053 ||
-      polygons.pixels[Math.trunc(newY)][Math.trunc(newX)][3] < 255
+      (navmesh as number[][])[Math.trunc(newY)][Math.trunc(newX)] != 1
     ) {
       [newX, newY] = [currX, currY];
     }
@@ -163,7 +166,7 @@ const Game = (props: GameProps) => {
       if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
         console.log('Sending update', message);
         websocket?.current?.send(JSON.stringify(message));
-        setLastServerUpdate(new Date().valueOf());
+        setLastServerUpdate(newUpdateTime);
       }
     }
 
