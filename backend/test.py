@@ -72,25 +72,25 @@ class TestClient:
                 if not self.game_started or not self.alive:
                     self.send({})
                 else:
-                    giveup = 100
+                    giveup = 10
                     if same_direction == 0:
-                        angle = 2 * math.pi * random.random()
+                        angle = 2 * math.pi * (random.randrange(8) / 8.0)
+                        # print(angle)
                     move_invalid = True
                     while move_invalid and giveup > 0:
-                        same_direction = (same_direction + 1) % 10
+                        same_direction = (same_direction + 1) % 50
                         duration = (datetime.datetime.utcnow() -
                                     self.last_message).total_seconds()
                         r = duration * MOVE_SPEED
-                        dx = r * math.cos(angle)
-                        dy = r * math.sin(angle)
-                        newX = self.last_position['X'] + dx,
-                        newY = self.last_position['Y'] + dy
                         dirX = math.cos(angle)
                         dirY = math.sin(angle)
-                        move_invalid = NAVMESH[int(newY)][int(newX)]
+                        newX = self.last_position['X'] + r * dirX
+                        newY = self.last_position['Y'] + r * dirY
+                        move_invalid = (NAVMESH[int(newY)][int(newX)] != 1)
                         if move_invalid:
+                            same_direction = 0
                             giveup -= 1
-                            angle = 2 * math.pi * random.random()
+                            angle = 2 * math.pi * (random.randrange(8) / 8.0)
 
                     if giveup == 0:
                         newX = self.last_position['X']
@@ -107,10 +107,10 @@ class TestClient:
                         'Y': dirY,
                     }
                     self.send({'Position': new_position,
-                              'Direction': new_direction})
+                               'Direction': new_direction})
+                    self.last_position = new_position
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
                 return
             time.sleep(0.05)
 
@@ -118,30 +118,26 @@ class TestClient:
         message = json.loads(message)
         if type(message) == str:
             self.id = message
-            if self.verbose:
-                print('id', self.id)
+            print(self.name, 'id', self.id)
             self.sendt = threading.Thread(target=self.send_updates)
             self.sendt.daemon = True
             self.sendt.start()
             return
 
-        message = json.loads(message)
-
-        self.last_position = message['Players'][self.id]['Position']
-        self.alive = message['Players'][self.id]['IsAlive']
-        if message['Status'] == 1:
-            self.game_started = True
-        if message['Status'] == 2 or message['Status'] == 3:
-            if self.verbose:
-                print('game ended', self.id)
-            self.stop()
+        if self.id:
+            self.last_position = message['Players'][self.id]['Position']
+            self.alive = message['Players'][self.id]['IsAlive']
+            if message['Status'] == 1:
+                self.game_started = True
+            if message['Status'] == 2 or message['Status'] == 3:
+                print(self.name, 'game ended')
+                self.stop()
 
         if self.verbose:
             print('message', self.id, message)
 
     def on_close(self, ws, close_status_code, close_msg):
-        if self.verbose:
-            print('close', self.id, close_status_code, close_msg)
+        print('close', self.id, close_status_code, close_msg)
 
 
 # %%

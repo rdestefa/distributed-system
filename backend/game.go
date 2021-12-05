@@ -102,6 +102,9 @@ func init() {
 }
 
 func checkNavmesh(v *Vector) bool {
+	if v.X < 0 || v.Y < 0 || v.X >= LIMITS.X || v.Y >= LIMITS.Y {
+		return false
+	}
 	_, _, _, alpha := NAVMESH_IMG.At(int(v.X), int(v.Y)).RGBA()
 	return alpha != 0
 }
@@ -269,9 +272,19 @@ PositionNoOp:
 			goto KillNoOp
 		}
 
+		if !pKiller.IsImpostor {
+			ErrorLogger.Println("performAction detected attempt to kill while not an impostor:", a.PlayerId)
+			goto KillNoOp
+		}
+
 		pVictim, ok := g.Players[*a.Kill]
 		if !ok {
 			ErrorLogger.Println("performAction could not find player:", *a.Kill)
+			goto KillNoOp
+		}
+
+		if pVictim.IsImpostor {
+			ErrorLogger.Println("performAction detected attempt to kill another impostor:", a.PlayerId)
 			goto KillNoOp
 		}
 
@@ -279,7 +292,7 @@ PositionNoOp:
 		maxDistanceSquared := math.Pow(duration*MOVE_SPEED+KILL_RANGE+MOVE_ALLOWANCE, 2)
 		distanceSquared := pKiller.Position.squaredDistance(pVictim.Position)
 		if distanceSquared > maxDistanceSquared {
-			WarnLogger.Println("performAction detected invalid kill from player:", a.PlayerId)
+			WarnLogger.Println("performAction detected invalid kill distance from player:", a.PlayerId)
 			goto KillNoOp
 		}
 

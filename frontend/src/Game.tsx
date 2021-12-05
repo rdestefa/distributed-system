@@ -134,10 +134,10 @@ const Game = (props: GameProps) => {
     // Check for collisions and reject move if there is one.
     if (
       newX < 0 ||
-      newX > 1531 ||
+      newX >= 1531 ||
       newY < 0 ||
-      newY > 1053 ||
-      (navmesh as number[][])[Math.trunc(newY)][Math.trunc(newX)] != 1
+      newY >= 1053 ||
+      (navmesh as number[][])[Math.trunc(newY)][Math.trunc(newX)] !== 1
     ) {
       [newX, newY] = [currX, currY];
     }
