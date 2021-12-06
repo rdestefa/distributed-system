@@ -76,7 +76,7 @@ const Game = (props: GameProps) => {
             isImpostor: val.IsImpostor,
             position: [val.Position.X, val.Position.Y],
             direction: [val.Direction.X, val.Direction.Y],
-            lastHeard: new Date().valueOf(),
+            lastHeard: Date.parse(val.LastHeard),
           };
 
           if (key === thisPlayerId) {
@@ -142,8 +142,11 @@ const Game = (props: GameProps) => {
       dirY,
       lastServerUpdate
     );
+    
+    // const distance = Math.sqrt((newX - currX)**2 + (newY - currY)**2);
+    // const duration = newUpdateTime - lastServerUpdate;
+    // console.log(new Date(lastServerUpdate).toISOString(), new Date(newUpdateTime).toISOString(), duration, currX, currY, newX, newY, distance, distance/duration);
 
-    // TODO: should we update the server before or after updating the client?
     if ([dirX, dirY] !== currDir) {
       const currDir: Record<string, number> = {
         X: dirX,
@@ -163,9 +166,9 @@ const Game = (props: GameProps) => {
       };
 
       if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
-        console.log('Sending update', message);
-        websocket?.current?.send(JSON.stringify(message));
+        // console.log('Sending update', message);
         setLastServerUpdate(newUpdateTime);
+        websocket?.current?.send(JSON.stringify(message));
       }
     }
 
@@ -221,7 +224,7 @@ const Game = (props: GameProps) => {
           return;
         }
 
-        console.log('Received state', currState);
+        // console.log('Received state', currState);
 
         if (currState?.Status === 1) {
           if (gameStatus !== status.PLAYING) {
@@ -229,7 +232,7 @@ const Game = (props: GameProps) => {
             setState(constructInitialGameState(currState));
             setGameStatus(status.PLAYING);
           } else {
-            console.log('Updating game');
+            // console.log('Updating game');
             setState(updateGameState(currState));
           }
         }
@@ -271,15 +274,17 @@ const Game = (props: GameProps) => {
       if (dirX || dirY) {
         updatePosition(dirX, dirY);
       } else if (new Date().valueOf() - lastServerUpdate > 100) {
+        const newUpdateTime = new Date();
+
         const message: Record<string, any> = {
           PlayerId: thisPlayerId,
-          Timestamp: new Date(),
+          Timestamp: newUpdateTime,
         };
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
-          console.log('Sending update', message);
+          // console.log('Sending update', message);
+          setLastServerUpdate(newUpdateTime.valueOf());
           websocket?.current?.send(JSON.stringify(message));
-          setLastServerUpdate(new Date().valueOf());
         }
       }
     }, 25);

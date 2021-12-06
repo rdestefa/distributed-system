@@ -20,7 +20,7 @@ export function determineNewPosition(
     currY: number,
     dirX: number,
     dirY: number,
-    lastUpdate: number
+    lastUpdate: number,
   ) {
     const newUpdateTime = new Date().valueOf();
     const duration = (newUpdateTime - lastUpdate) / 1000.0;

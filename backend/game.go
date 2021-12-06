@@ -105,7 +105,7 @@ var (
 const (
 	START_RADIUS   = 70.0
 	MOVE_SPEED     = 120.0
-	MOVE_ALLOWANCE = 0.1
+	MOVE_ALLOWANCE = 1
 	KILL_RANGE     = 30.0
 	TASK_RANGE     = 60.0
 )
