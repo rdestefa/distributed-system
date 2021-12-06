@@ -31,10 +31,10 @@ const (
 )
 
 type GameState struct {
-	GameId         string
-	Status         GameStatus
-	Players        map[string]*Player
-	CompletedTasks map[string]interface{}
+	GameId  string
+	Status  GameStatus
+	Players map[string]*Player
+	Tasks   map[string]*Task
 }
 
 type Player struct {
@@ -50,12 +50,21 @@ type Player struct {
 }
 
 type Action struct {
-	PlayerId  string
-	Position  *Vector
-	Direction *Vector
-	Kill      *string
-	Task      *string
-	Timestamp Time
+	PlayerId     string
+	Position     *Vector
+	Direction    *Vector
+	Kill         *string
+	StartTask    *string
+	CompleteTask *string
+	Timestamp    Time
+}
+
+type Task struct {
+	TaskId     string
+	Location   Vector
+	Completer  *string
+	Start      *Time
+	IsComplete bool
 }
 
 type Time struct {
@@ -85,6 +94,14 @@ var (
 	LIMITS       = Vector{X: 1531, Y: 1053}
 	START_CENTER = Vector{X: 818, Y: 294}
 	COLORS       = []string{"D71E22", "1D3CE9", "1B913E", "FF63D4", "FF8D1C", "FFFF67", "4A565E", "E9F7FF", "783DD2", "80582D"}
+	TASKS        = []Task{
+		{"task0", Vector{87, 663}, nil, nil, false},
+		{"task1", Vector{597, 701}, nil, nil, false},
+		{"task2", Vector{987, 965}, nil, nil, false},
+		{"task3", Vector{1055, 677}, nil, nil, false},
+		{"task4", Vector{1435, 517}, nil, nil, false},
+		{"task5", Vector{930, 335}, nil, nil, false},
+	}
 )
 
 const (
@@ -113,15 +130,20 @@ func checkNavmesh(v *Vector) bool {
 func newGame(toserver chan *serverUpdate) *game {
 	g := &game{
 		GameState: GameState{
-			GameId:         uuid.NewString(),
-			Status:         LOBBY,
-			Players:        make(map[string]*Player),
-			CompletedTasks: make(map[string]interface{}),
+			GameId:  uuid.NewString(),
+			Status:  LOBBY,
+			Players: make(map[string]*Player),
+			Tasks:   make(map[string]*Task),
 		},
 
 		sentLast: false,
 		inbox:    make(chan *gameUpdate, 16),
 		toserver: toserver,
+	}
+
+	for _, task := range TASKS {
+		taskCopy := task
+		g.Tasks[task.TaskId] = &taskCopy
 	}
 
 	// start game loop
@@ -310,14 +332,14 @@ PositionNoOp:
 	}
 KillNoOp:
 
-	if a.Task != nil {
+	if a.CompleteTask != nil {
 		if g.Status != IN_PROGRESS {
 			WarnLogger.Println("performAction detected attempt to complete task when not in progress:", a.PlayerId)
 			goto TaskNoOp
 		}
 
 		// TODO: perform necessary checks
-		g.CompletedTasks[*a.Task] = struct{}{}
+		g.Tasks[*a.CompleteTask].IsComplete = true
 		goto TaskNoOp
 	}
 TaskNoOp:
@@ -374,7 +396,13 @@ func (g *game) checkEndOfGame() {
 	}
 
 	// TODO: check for all tasks completed
-	if len(g.CompletedTasks) == 5 {
+	completedTasks := 0
+	for _, task := range g.Tasks {
+		if task.IsComplete {
+			completedTasks++
+		}
+	}
+	if completedTasks == 5 {
 		g.Status = CREWMATES_WIN
 	}
 }
