@@ -44,7 +44,7 @@ class TestClient:
         self.id = None
         self.game_started = False
         self.last_message = datetime.datetime.utcnow()
-        self.last_position = {'X': 0, 'Y': 0}
+        self.last_position = None
         self.alive = True
 
     def stop(self):
@@ -56,37 +56,33 @@ class TestClient:
             self.sendt.join()
             self.sendt = None
 
-    def send(self, data):
-        now = datetime.datetime.utcnow()
+    def send(self, data, now):
         data = data | {'PlayerId': self.id, 'TimeStamp': now}
         msg = DateTimeJSONEncoder().encode(data)
-        if self.verbose:
-            print('send', self.id, msg)
-        self.wsapp.send(msg)
         self.last_message = now
+        self.wsapp.send(msg)
 
     def send_updates(self):
         same_direction = 0
         while True:
             try:
-                if not self.game_started or not self.alive:
-                    self.send({})
+                if not self.game_started or not self.alive or self.last_position == None:
+                    self.send({}, datetime.datetime.utcnow())
                 else:
+                    now = datetime.datetime.utcnow()
                     giveup = 10
                     if same_direction == 0:
                         angle = 2 * math.pi * (random.randrange(8) / 8.0)
-                        # print(angle)
                     move_invalid = True
                     while move_invalid and giveup > 0:
                         same_direction = (same_direction + 1) % 50
-                        duration = (datetime.datetime.utcnow() -
-                                    self.last_message).total_seconds()
+                        duration = (now - self.last_message).total_seconds()
                         r = duration * MOVE_SPEED
                         dirX = math.cos(angle)
                         dirY = math.sin(angle)
                         newX = self.last_position['X'] + r * dirX
                         newY = self.last_position['Y'] + r * dirY
-                        move_invalid = (NAVMESH[int(newY)][int(newX)] != 1)
+                        move_invalid = (newX < 0 or newY < 0 or newX >= len(NAVMESH[0]) or newY >= len(NAVMESH) or NAVMESH[int(newY)][int(newX)] != 1)
                         if move_invalid:
                             same_direction = 0
                             giveup -= 1
@@ -106,8 +102,14 @@ class TestClient:
                         'X': dirX,
                         'Y': dirY,
                     }
+
+                    # if self.verbose:
+                    #     distance = math.sqrt((new_position['X'] - self.last_position['X'])**2 + (new_position['Y'] - self.last_position['Y'])**2)
+                    #     duration = (now - self.last_message).total_seconds()
+                    #     print(self.last_message, now, duration, self.last_position, new_position, distance, distance/duration)
+
                     self.send({'Position': new_position,
-                               'Direction': new_direction})
+                               'Direction': new_direction}, now)
                     self.last_position = new_position
             except Exception as e:
                 print(e)
@@ -125,16 +127,18 @@ class TestClient:
             return
 
         if self.id:
-            self.last_position = message['Players'][self.id]['Position']
             self.alive = message['Players'][self.id]['IsAlive']
             if message['Status'] == 1:
                 self.game_started = True
+                if self.last_position == None:
+                    self.last_position = message['Players'][self.id]['Position']
+                    self.last_message = datetime.datetime.utcnow()
             if message['Status'] == 2 or message['Status'] == 3:
                 print(self.name, 'game ended')
                 self.stop()
 
-        if self.verbose:
-            print('message', self.id, message)
+        # if self.verbose:
+        #     print('message', self.id, message)
 
     def on_close(self, ws, close_status_code, close_msg):
         print('close', self.id, close_status_code, close_msg)

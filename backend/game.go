@@ -20,9 +20,6 @@ import (
 // Enum type to describe the state of the game.
 type GameStatus int
 
-// NullUUID is struct with []byte providing JSON marshalling
-type UUID uuid.NullUUID
-
 const (
 	LOBBY = iota
 	IN_PROGRESS
@@ -285,11 +282,11 @@ func (g *game) performAction(a *Action) {
 		}
 
 		duration := a.Timestamp.Sub(p.LastHeard.Time).Seconds()
-		// maxDistanceSquared := math.Pow(duration*MOVE_SPEED+MOVE_ALLOWANCE, 2)
-		maxDistanceSquared := math.Pow(duration*MOVE_SPEED, 2)
+		maxDistanceSquared := math.Pow(duration*MOVE_SPEED+MOVE_ALLOWANCE, 2)
 		distanceSquared := a.Position.squaredDistance(p.Position)
 		if distanceSquared > maxDistanceSquared {
-			speed := math.Sqrt(distanceSquared) / duration
+			distance := math.Sqrt(distanceSquared)
+			speed := distance / duration
 			WarnLogger.Println("excessive movement from player:", a.PlayerId, speed)
 			goto PositionNoOp
 		}
@@ -507,7 +504,6 @@ func (g *game) checkEndOfGame() {
 		g.Status = IMPOSTORS_WIN
 	}
 
-	// TODO: check for all tasks completed
 	completedTasks := 0
 	for _, task := range g.Tasks {
 		if task.IsComplete {
