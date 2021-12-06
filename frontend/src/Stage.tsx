@@ -1,5 +1,6 @@
 import React from 'react';
 import {IGameState, TaskState} from './gameState';
+import {determineNewPosition} from './util'
 
 interface StageProps {
   maxWidth: number;
@@ -155,12 +156,14 @@ const Stage = ({
           const otherPlayerPromise = Promise.resolve(() => {
             context.fillStyle = val.color;
 
+            const [posX, posY, _] = determineNewPosition(val.position[0], val.position[1], val.direction[0], val.direction[1], val.lastHeard)
+
             context.fillRect(
               canvasWidth / 2 +
-                (val.position[0] - stageX) * (canvasWidth / windowWidth) -
+                (posX - stageX) * (canvasWidth / windowWidth) -
                 playerWidth / 2,
               canvasHeight / 2 +
-                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
+                (posY - stageY) * (canvasHeight / windowHeight) -
                 playerHeight / 2,
               playerWidth,
               playerHeight
@@ -172,9 +175,9 @@ const Stage = ({
             context.fillText(
               val.playerName,
               canvasWidth / 2 +
-                (val.position[0] - stageX) * (canvasWidth / windowWidth),
+                (posX - stageX) * (canvasWidth / windowWidth),
               canvasHeight / 2 +
-                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
+                (posY - stageY) * (canvasHeight / windowHeight) -
                 playerHeight / 2 -
                 6
             );

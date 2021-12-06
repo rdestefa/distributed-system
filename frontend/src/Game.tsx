@@ -10,15 +10,15 @@ import {
   keyMap,
   status,
 } from './gameState';
-import {loadImage} from './Util';
+import {loadImage, determineNewPosition} from './util';
 import background from './background.png';
 import navmesh from './navmesh.json';
+
 interface GameProps {
   username: string;
   loginHandler: React.MouseEventHandler<HTMLButtonElement>;
 }
 
-const movementSpeed: number = 120.0;
 const keyMappings = keyMap;
 
 function determineDirection() {
@@ -131,33 +131,6 @@ const Game = (props: GameProps) => {
     },
     [thisPlayerId, state]
   );
-
-  function determineNewPosition(
-    currX: number,
-    currY: number,
-    dirX: number,
-    dirY: number,
-    lastUpdate: number
-  ) {
-    const newUpdateTime = new Date().valueOf();
-    const duration = (newUpdateTime - lastUpdate) / 1000.0;
-
-    let newX = currX + movementSpeed * duration * dirX;
-    let newY = currY + movementSpeed * duration * dirY;
-
-    // Check for collisions and reject move if there is one.
-    if (
-      newX < 0 ||
-      newX >= 1531 ||
-      newY < 0 ||
-      newY >= 1053 ||
-      (navmesh as number[][])[Math.trunc(newY)][Math.trunc(newX)] !== 1
-    ) {
-      [newX, newY] = [currX, currY];
-    }
-
-    return [newX, newY, newUpdateTime];
-  }
 
   function updatePosition(dirX: number, dirY: number) {
     const [currX, currY]: number[] = state.thisPlayer.position;
@@ -293,7 +266,7 @@ const Game = (props: GameProps) => {
   useEffect(() => {
     const interval = setInterval(() => {
       const [dirX, dirY]: number[] = determineDirection();
-      predictOtherPlayerMovement();
+      // predictOtherPlayerMovement();
 
       if (dirX || dirY) {
         updatePosition(dirX, dirY);
