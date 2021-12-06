@@ -82,7 +82,8 @@ class TestClient:
                         dirY = math.sin(angle)
                         newX = self.last_position['X'] + r * dirX
                         newY = self.last_position['Y'] + r * dirY
-                        move_invalid = (newX < 0 or newY < 0 or newX >= len(NAVMESH[0]) or newY >= len(NAVMESH) or NAVMESH[int(newY)][int(newX)] != 1)
+                        move_invalid = (newX < 0 or newY < 0 or newX >= len(
+                            NAVMESH[0]) or newY >= len(NAVMESH) or NAVMESH[int(newY)][int(newX)] != 1)
                         if move_invalid:
                             same_direction = 0
                             giveup -= 1
