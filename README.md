@@ -1,2 +1,5 @@
-# distributed-system
-Fall 2021 Distributed Systems Project
+# Simple 'Among Us' Recreation
+
+- React.js Front End
+- Go Backend
+- Python Testing
