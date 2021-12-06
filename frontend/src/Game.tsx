@@ -113,6 +113,11 @@ const Game = (props: GameProps) => {
         Object.entries(gameState.Players).forEach(
           ([key, val]: (string | any)[]) => {
             if (key === thisPlayerId) {
+              if (!val.IsAlive) {
+                setGameStatus(status.KILLED);
+                return state;
+              }
+
               newState.thisPlayer = {
                 ...newState.thisPlayer,
                 isAlive: val.IsAlive,
@@ -255,6 +260,10 @@ const Game = (props: GameProps) => {
       };
 
       websocket.current.onmessage = (message) => {
+        if (gameStatus === status.KILLED) {
+          return;
+        }
+
         const currState = JSON.parse(message.data);
 
         if (typeof currState === 'string' || currState instanceof String) {
@@ -275,13 +284,29 @@ const Game = (props: GameProps) => {
             setState(updateGameState(currState));
             setCurrentTasks(updateTasksState(currState));
           }
+        } else if (currState?.State === 2) {
+          if (state.thisPlayer.isImpostor) {
+            setGameStatus(status.LOSE);
+          } else {
+            setGameStatus(status.WIN);
+          }
+        } else if (currState?.State === 3) {
+          if (state.thisPlayer.isImpostor) {
+            setGameStatus(status.WIN);
+          } else {
+            setGameStatus(status.LOSE);
+          }
         }
       };
 
       websocket.current.onclose = () => {
+        if (gameStatus === status.WIN || gameStatus === status.LOSE) {
+          return;
+        }
+
         if (gameStatus === status.LOADING) {
           setGameStatus(status.CONNECTION_FAILED);
-        } else if (gameStatus !== status.FINISHED) {
+        } else {
           setGameStatus(status.DISCONNECTED);
         }
       };
@@ -293,6 +318,7 @@ const Game = (props: GameProps) => {
   }, [
     thisPlayerId,
     gameStatus,
+    state.thisPlayer.isImpostor,
     setThisPlayerId,
     constructInitialGameState,
     updateGameState,
@@ -530,30 +556,40 @@ const Game = (props: GameProps) => {
           </div>
         </div>
       )}
-      {gameStatus === status.KILLED && <h1>You have been killed</h1>}
-      {gameStatus === status.FINISHED && (
+      {gameStatus === status.KILLED && (
         <>
-          <h1>The game has finished. Thanks for playing!</h1>
+          <h1>You have been killed.</h1>
+          <button onClick={handleReturnToLogin}>Play Again</button>
+        </>
+      )}
+      {gameStatus === status.WIN && (
+        <>
+          <h1>You've won! Thanks for playing!</h1>
+          <button onClick={handleReturnToLogin}>Play Again</button>
+        </>
+      )}
+      {gameStatus === status.LOSE && (
+        <>
+          <h1>You lost. Better luck next time.</h1>
           <button onClick={handleReturnToLogin}>Play Again</button>
         </>
       )}
       {gameStatus === status.ERROR && (
         <>
-          <h1>An unexpected error caused an abrupt disconnection</h1>
-          <h1>You have 30 seconds to reconnect or you will be removed</h1>
+          <h1>An unexpected error caused an abrupt disconnection.</h1>
           <button onClick={handleReconnect}>Reconnect</button>
           <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
       )}
       {gameStatus === status.DISCONNECTED && (
         <>
-          <h1>You have been disconnected</h1>
+          <h1>You have been disconnected.</h1>
           <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
       )}
       {gameStatus === status.CONNECTION_FAILED && (
         <>
-          <h1>Failed to connect</h1>
+          <h1>Failed to connect.</h1>
           <button onClick={handleReconnect}>Try Again</button>
           <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
