@@ -55,6 +55,7 @@ type Action struct {
 	Direction    *Vector
 	Kill         *string
 	StartTask    *string
+	CancelTask   *string
 	CompleteTask *string
 	Timestamp    Time
 }
@@ -106,9 +107,10 @@ var (
 
 const (
 	START_RADIUS   = 70.0
-	MOVE_SPEED     = 200.0
+	MOVE_SPEED     = 120.0
 	MOVE_ALLOWANCE = 0.1
 	KILL_RANGE     = 30.0
+	TASK_RANGE     = 60.0
 )
 
 func init() {
@@ -255,35 +257,45 @@ func (g *game) performAction(a *Action) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// TODO: check if id is correct
-
 	DebugLogger.Println("Perform action:", a)
+
+	p, ok := g.Players[a.PlayerId]
+	if !ok {
+		WarnLogger.Println("could not find player:", a.PlayerId)
+		return
+	}
+
+	if !p.IsAlive {
+		WarnLogger.Println("attempt to perform action while not alive:", a.PlayerId)
+		return
+	}
+
+	if a.Timestamp.Unix() > time.Now().Unix() {
+		WarnLogger.Println("attempt to perform action in the future:", a.Timestamp.Time, time.Now())
+		return
+	}
 
 	if a.Position != nil {
 		DebugLogger.Println("Action position: a.Position", a.Position)
 		DebugLogger.Println("Action direction: a.Direction", a.Direction)
 
 		if g.Status != IN_PROGRESS {
-			WarnLogger.Println("performAction detected attempt to move when not in progress:", a.PlayerId)
+			WarnLogger.Println("attempt to move when not in progress:", a.PlayerId)
 			goto PositionNoOp
 		}
 
-		p, ok := g.Players[a.PlayerId]
-		if !ok {
-			ErrorLogger.Println("performAction could not find player:", a.PlayerId)
-			goto PositionNoOp
-		}
-
-		duration := a.Timestamp.Time.Sub(p.LastHeard.Time).Seconds()
-		maxDistanceSquared := math.Pow(duration*MOVE_SPEED+MOVE_ALLOWANCE, 2)
+		duration := a.Timestamp.Sub(p.LastHeard.Time).Seconds()
+		// maxDistanceSquared := math.Pow(duration*MOVE_SPEED+MOVE_ALLOWANCE, 2)
+		maxDistanceSquared := math.Pow(duration*MOVE_SPEED, 2)
 		distanceSquared := a.Position.squaredDistance(p.Position)
 		if distanceSquared > maxDistanceSquared {
-			WarnLogger.Println("performAction detected excessive movement from player:", a.PlayerId)
+			speed := math.Sqrt(distanceSquared) / duration
+			WarnLogger.Println("excessive movement from player:", a.PlayerId, speed)
 			goto PositionNoOp
 		}
 
 		if !checkNavmesh(a.Position) {
-			WarnLogger.Println("performAction detected out of bounds move from player:", a.PlayerId)
+			WarnLogger.Println("out of bounds move from player:", a.PlayerId)
 			goto PositionNoOp
 		}
 
@@ -292,65 +304,165 @@ func (g *game) performAction(a *Action) {
 	}
 PositionNoOp:
 
+	p.LastHeard = Time(a.Timestamp)
+
 	if a.Kill != nil {
 		if g.Status != IN_PROGRESS {
-			WarnLogger.Println("performAction detected attempt to kill when not in progress:", a.PlayerId)
+			WarnLogger.Println("attempt to kill when not in progress:", a.PlayerId)
 			goto KillNoOp
 		}
 
-		pKiller, ok := g.Players[a.PlayerId]
-		if !ok {
-			ErrorLogger.Println("performAction could not find player:", a.PlayerId)
-			goto KillNoOp
-		}
+		pKiller := p
 
 		if !pKiller.IsImpostor {
-			ErrorLogger.Println("performAction detected attempt to kill while not an impostor:", a.PlayerId)
+			ErrorLogger.Println("attempt to kill while not an impostor:", a.PlayerId)
 			goto KillNoOp
 		}
 
 		pVictim, ok := g.Players[*a.Kill]
 		if !ok {
-			ErrorLogger.Println("performAction could not find player:", *a.Kill)
+			ErrorLogger.Println("could not find player to kill:", *a.Kill)
 			goto KillNoOp
 		}
 
 		if pVictim.IsImpostor {
-			ErrorLogger.Println("performAction detected attempt to kill another impostor:", a.PlayerId)
+			ErrorLogger.Println("attempt to kill another impostor:", a.PlayerId)
 			goto KillNoOp
 		}
 
-		duration := a.Timestamp.Time.Sub(pVictim.LastHeard.Time).Seconds()
+		duration := a.Timestamp.Sub(pVictim.LastHeard.Time).Seconds()
 		maxDistanceSquared := math.Pow(duration*MOVE_SPEED+KILL_RANGE+MOVE_ALLOWANCE, 2)
 		distanceSquared := pKiller.Position.squaredDistance(pVictim.Position)
 		if distanceSquared > maxDistanceSquared {
-			WarnLogger.Println("performAction detected invalid kill distance from player:", a.PlayerId)
+			WarnLogger.Println("invalid kill distance from player:", a.PlayerId)
 			goto KillNoOp
 		}
 
 		pVictim.IsAlive = false
+
+		for _, task := range g.Tasks {
+			if !task.IsComplete && *task.Completer == pVictim.PlayerId {
+				task.Completer = nil
+				task.Start = nil
+			}
+		}
 	}
 KillNoOp:
 
-	if a.CompleteTask != nil {
+	if a.StartTask != nil {
 		if g.Status != IN_PROGRESS {
-			WarnLogger.Println("performAction detected attempt to complete task when not in progress:", a.PlayerId)
-			goto TaskNoOp
+			WarnLogger.Println("attempt to start task when not in progress:", a.PlayerId)
+			goto TaskStartNoOp
 		}
 
-		// TODO: perform necessary checks
-		g.Tasks[*a.CompleteTask].IsComplete = true
-		goto TaskNoOp
-	}
-TaskNoOp:
+		task, ok := g.Tasks[*a.StartTask]
+		if !ok {
+			WarnLogger.Println("invalid task id to be started:", a.StartTask)
+			goto TaskStartNoOp
+		}
 
-	// TODO: update lastheard
-	p, ok := g.Players[a.PlayerId]
-	if ok {
-		p.LastHeard = Time(a.Timestamp)
-	} else {
-		ErrorLogger.Println("performAction could not find player:", a.PlayerId)
+		if p.Position.squaredDistance(task.Location) > math.Pow(TASK_RANGE, 2)+EPS {
+			WarnLogger.Println("task to be started is too far:", a.StartTask)
+			goto TaskStartNoOp
+		}
+
+		if task.IsComplete {
+			WarnLogger.Println("attempt to start task that is already completed:", a.StartTask)
+			goto TaskStartNoOp
+		}
+
+		if task.Completer != nil {
+			WarnLogger.Println("attempt to start task that is already started:", a.StartTask, p.PlayerId)
+			goto TaskStartNoOp
+		}
+
+		if *task.Completer != p.PlayerId {
+			WarnLogger.Println("attempt to start task that being completed by someone else:", a.StartTask, *task.Completer, p.PlayerId)
+			goto TaskStartNoOp
+		}
+
+		g.Tasks[*a.CancelTask].Completer = &p.PlayerId
+		g.Tasks[*a.CancelTask].Start = &a.Timestamp
 	}
+TaskStartNoOp:
+
+	if a.CancelTask != nil {
+		if g.Status != IN_PROGRESS {
+			WarnLogger.Println("attempt to start task when not in progress:", a.PlayerId)
+			goto TaskCancelNoOp
+		}
+
+		task, ok := g.Tasks[*a.CancelTask]
+		if !ok {
+			WarnLogger.Println("invalid task id to be cancelled:", a.CancelTask)
+			goto TaskCancelNoOp
+		}
+
+		if p.Position.squaredDistance(task.Location) > math.Pow(TASK_RANGE, 2)+EPS {
+			WarnLogger.Println("task to be cancelled is too far:", a.CancelTask)
+			goto TaskCancelNoOp
+		}
+
+		if task.IsComplete {
+			WarnLogger.Println("attempt to cancel task that is already completed:", a.CancelTask)
+			goto TaskCancelNoOp
+		}
+
+		if task.Completer == nil {
+			WarnLogger.Println("attempt to cancel task that is not started:", a.CancelTask, p.PlayerId)
+			goto TaskCancelNoOp
+		}
+
+		if *task.Completer != p.PlayerId {
+			WarnLogger.Println("attempt to cancel task that is being completed by someone else:", a.CancelTask, *task.Completer, p.PlayerId)
+			goto TaskCancelNoOp
+		}
+
+		g.Tasks[*a.CancelTask].Completer = nil
+		g.Tasks[*a.CancelTask].Start = nil
+	}
+TaskCancelNoOp:
+
+	if a.CompleteTask != nil {
+		if g.Status != IN_PROGRESS {
+			WarnLogger.Println("attempt to complete task when not in progress:", a.PlayerId)
+			goto TaskCompleteNoOp
+		}
+
+		task, ok := g.Tasks[*a.CompleteTask]
+		if !ok {
+			WarnLogger.Println("invalid task id to be completed:", a.CompleteTask)
+			goto TaskCompleteNoOp
+		}
+
+		if p.Position.squaredDistance(task.Location) > math.Pow(TASK_RANGE, 2)+EPS {
+			WarnLogger.Println("task to be completed is too far:", a.CompleteTask)
+			goto TaskCompleteNoOp
+		}
+
+		if task.IsComplete {
+			WarnLogger.Println("attempt to complete task that is already completed:", a.CompleteTask)
+			goto TaskCompleteNoOp
+		}
+
+		if task.Completer == nil {
+			WarnLogger.Println("attempt to complete task that wasn't started:", a.CompleteTask, p.PlayerId)
+			goto TaskCompleteNoOp
+		}
+
+		if *task.Completer != p.PlayerId {
+			WarnLogger.Println("attempt to complete task that is being completed by someone else:", a.CompleteTask, *task.Completer, p.PlayerId)
+			goto TaskCompleteNoOp
+		}
+
+		if a.Timestamp.Sub(task.Start.Time) < 5*time.Second {
+			WarnLogger.Println("attempt to complete task earlier than 5 seconds since start:", a.CompleteTask, p.PlayerId)
+			goto TaskCompleteNoOp
+		}
+
+		g.Tasks[*a.CompleteTask].IsComplete = true
+	}
+TaskCompleteNoOp:
 }
 
 func (g *game) disconnectPlayer(playerId string) {
