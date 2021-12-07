@@ -1,12 +1,15 @@
 # %%
-import websocket
-import threading
-import json
-from pprint import pprint
-import time
 import datetime
+import json
 import math
+import os
 import random
+import sys
+import threading
+import time
+from pprint import pprint
+
+import websocket
 
 # websocket.enableTrace(True)
 websocket.enableTrace(False)
@@ -16,6 +19,8 @@ websocket.enableTrace(False)
 NAVMESH = json.load(open('navmesh.json', 'r'))
 
 MOVE_SPEED = 120.0
+
+TEST_1 = False
 
 
 class DateTimeJSONEncoder(json.JSONEncoder):
@@ -35,6 +40,7 @@ class TestClient:
         self.verbose = verbose
 
     def start(self):
+        # self.wsapp = websocket.WebSocketApp(f"ws://10.26.247.169:10000/connect", header={
         self.wsapp = websocket.WebSocketApp(f"ws://localhost:10000/connect", header={
                                             'name': self.name}, on_message=self.on_message, on_close=self.on_close)
         self.wst = threading.Thread(target=self.wsapp.run_forever)
@@ -46,6 +52,7 @@ class TestClient:
         self.last_message = datetime.datetime.utcnow()
         self.last_position = None
         self.alive = True
+        self.last_server_message = None
 
     def stop(self):
         self.wsapp.close()
@@ -82,7 +89,8 @@ class TestClient:
                         dirY = math.sin(angle)
                         newX = self.last_position['X'] + r * dirX
                         newY = self.last_position['Y'] + r * dirY
-                        move_invalid = (newX < 0 or newY < 0 or newX >= len(NAVMESH[0]) or newY >= len(NAVMESH) or NAVMESH[int(newY)][int(newX)] != 1)
+                        move_invalid = (newX < 0 or newY < 0 or newX >= len(
+                            NAVMESH[0]) or newY >= len(NAVMESH) or NAVMESH[int(newY)][int(newX)] != 1)
                         if move_invalid:
                             same_direction = 0
                             giveup -= 1
@@ -103,11 +111,6 @@ class TestClient:
                         'Y': dirY,
                     }
 
-                    # if self.verbose:
-                    #     distance = math.sqrt((new_position['X'] - self.last_position['X'])**2 + (new_position['Y'] - self.last_position['Y'])**2)
-                    #     duration = (now - self.last_message).total_seconds()
-                    #     print(self.last_message, now, duration, self.last_position, new_position, distance, distance/duration)
-
                     self.send({'Position': new_position,
                                'Direction': new_direction}, now)
                     self.last_position = new_position
@@ -125,6 +128,18 @@ class TestClient:
             self.sendt.daemon = True
             self.sendt.start()
             return
+
+        if TEST_1:
+            now = datetime.datetime.utcnow()
+            if self.last_server_message != None:
+                print((now - self.last_server_message).total_seconds(),
+                      file=self.out_test)
+                self.out_test.flush()
+                os.fsync(self.out_test)
+                self.last_server_message = now
+            else:
+                self.out_test = open('out-'+self.name+'.txt', 'w')
+                self.last_server_message = now
 
         if self.id:
             self.alive = message['Players'][self.id]['IsAlive']
@@ -145,16 +160,21 @@ class TestClient:
 
 
 # %%
-N = 9
-# clients = [TestClient(f"test {i}", verbose=(i==0)) for i in range(N)]
+if len(sys.argv) == 2:
+    N = int(sys.argv[1])
+else:
+    N = 9
 clients = [TestClient(f"test {i}", verbose=False) for i in range(N)]
 print(len(clients), 'clients')
 for client in clients:
     client.start()
-    # time.sleep(0.1)
-while True:
-    time.sleep(1)
-# time.sleep(3)
+
+if TEST_1:
+    time.sleep(10)
+else:
+    while True:
+        time.sleep(10)
+
 # for i, client in reversed(list(enumerate(clients))):
 #     print('Stopping client', client.id)
 #     client.stop()

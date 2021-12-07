@@ -373,13 +373,8 @@ KillNoOp:
 			goto TaskStartNoOp
 		}
 
-		if *task.Completer != p.PlayerId {
-			WarnLogger.Println("attempt to start task that being completed by someone else:", a.StartTask, *task.Completer, p.PlayerId)
-			goto TaskStartNoOp
-		}
-
-		g.Tasks[*a.CancelTask].Completer = &p.PlayerId
-		g.Tasks[*a.CancelTask].Start = &a.Timestamp
+		g.Tasks[*a.StartTask].Completer = &p.PlayerId
+		g.Tasks[*a.StartTask].Start = &a.Timestamp
 	}
 TaskStartNoOp:
 
