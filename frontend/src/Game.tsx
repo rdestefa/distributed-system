@@ -12,7 +12,6 @@ import {
 } from './gameState';
 import {loadImage, determineNewPosition} from './util';
 import background from './background.png';
-import navmesh from './navmesh.json';
 
 interface GameProps {
   username: string;
@@ -55,8 +54,13 @@ const Game = (props: GameProps) => {
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
   const [lastServerUpdate, setLastServerUpdate] = useState<number>(0);
-  const [currentTasks, setCurrentTasks] =
-    useState<Record<string, TaskState>>(initialTasks);
+  const [playersInRange, setPlayersInRange] = useState<string[]>([]);
+  const [tasksInRange, setTasksInRange] = useState<string[]>([]);
+  const [currentTasks, setCurrentTasks] = useState<Record<string, TaskState>>({
+    ...initialTasks,
+  });
+  const taskTimer = useRef<any>();
+
   let currDir: number[] = [0, 0];
 
   const constructInitialGameState = useCallback(
@@ -95,7 +99,11 @@ const Game = (props: GameProps) => {
     [thisPlayerId]
   );
 
-  const [state, setState] = useState<IGameState>(initialGameState);
+  const [state, setState] = useState<IGameState>({
+    ...initialGameState,
+    thisPlayer: initialGameState.thisPlayer,
+    otherPlayers: {},
+  });
 
   const updateGameState = useCallback(
     (gameState: Record<string, any>) => {
@@ -105,6 +113,11 @@ const Game = (props: GameProps) => {
         Object.entries(gameState.Players).forEach(
           ([key, val]: (string | any)[]) => {
             if (key === thisPlayerId) {
+              if (!val.IsAlive) {
+                setGameStatus(status.KILLED);
+                return state;
+              }
+
               newState.thisPlayer = {
                 ...newState.thisPlayer,
                 isAlive: val.IsAlive,
@@ -132,6 +145,24 @@ const Game = (props: GameProps) => {
     [thisPlayerId, state]
   );
 
+  const updateTasksState = useCallback(
+    (serverState: Record<string, any>) => {
+      if (serverState.GameId === state.gameId) {
+        const newState: Record<string, TaskState> = {...currentTasks};
+
+        Object.entries(serverState.Tasks).forEach(([key, val]: any[]) => {
+          newState[key].completer = val.Completer ?? '';
+          newState[key].done = val.IsComplete;
+        });
+
+        return newState;
+      }
+
+      return currentTasks;
+    },
+    [currentTasks, state.gameId]
+  );
+
   function updatePosition(dirX: number, dirY: number) {
     const [currX, currY]: number[] = state.thisPlayer.position;
 
@@ -142,7 +173,7 @@ const Game = (props: GameProps) => {
       dirY,
       lastServerUpdate
     );
-    
+
     // const distance = Math.sqrt((newX - currX)**2 + (newY - currY)**2);
     // const duration = newUpdateTime - lastServerUpdate;
     // console.log(new Date(lastServerUpdate).toISOString(), new Date(newUpdateTime).toISOString(), duration, currX, currY, newX, newY, distance, distance/duration);
@@ -160,8 +191,6 @@ const Game = (props: GameProps) => {
           Y: newY,
         },
         Direction: currDir,
-        Kill: null,
-        Task: null,
         Timestamp: new Date(),
       };
 
@@ -178,26 +207,41 @@ const Game = (props: GameProps) => {
     });
   }
 
-  function predictOtherPlayerMovement() {
-    const newState: IGameState = {...state};
-    Object.entries(state.otherPlayers).forEach(([key, val]) => {
-      const [currX, currY, dirX, dirY] = [...val.position, ...val.direction];
-
-      let [newX, newY] = determineNewPosition(
-        currX,
-        currY,
-        dirX,
-        dirY,
-        val.lastHeard
+  function findNearbyTasks() {
+    const nearbyTasks: string[] = [];
+    const [currX, currY] = state.thisPlayer.position;
+    Object.entries(currentTasks).forEach(([key, val]) => {
+      const [taskX, taskY] = val.position;
+      const distance = Math.sqrt(
+        Math.pow(currX - taskX, 2) + Math.pow(currY - taskY, 2)
       );
 
-      newState.otherPlayers[key] = {
-        ...newState.otherPlayers[key],
-        position: [newX, newY],
-      };
+      if (distance <= 60 && !val.done) {
+        if (!(!!val.completer && val.completer !== thisPlayerId)) {
+          nearbyTasks.push(key);
+        }
+      }
     });
 
-    setState(newState);
+    setTasksInRange(nearbyTasks);
+  }
+
+  function findNearbyPlayers() {
+    const nearbyPlayers: string[] = [];
+    const [currX, currY] = state.thisPlayer.position;
+
+    Object.entries(state.otherPlayers).forEach(([key, val]) => {
+      const [playerX, playerY] = val.position;
+      const distance = Math.sqrt(
+        Math.pow(currX - playerX, 2) + Math.pow(currY - playerY, 2)
+      );
+
+      if (distance <= 30 && val.isAlive && !val.isImpostor) {
+        nearbyPlayers.push(key);
+      }
+    });
+
+    setPlayersInRange(nearbyPlayers);
   }
 
   // Establish WebSocket connection.
@@ -216,6 +260,10 @@ const Game = (props: GameProps) => {
       };
 
       websocket.current.onmessage = (message) => {
+        if (gameStatus === status.KILLED) {
+          return;
+        }
+
         const currState = JSON.parse(message.data);
 
         if (typeof currState === 'string' || currState instanceof String) {
@@ -234,14 +282,31 @@ const Game = (props: GameProps) => {
           } else {
             // console.log('Updating game');
             setState(updateGameState(currState));
+            setCurrentTasks(updateTasksState(currState));
+          }
+        } else if (currState?.State === 2) {
+          if (state.thisPlayer.isImpostor) {
+            setGameStatus(status.LOSE);
+          } else {
+            setGameStatus(status.WIN);
+          }
+        } else if (currState?.State === 3) {
+          if (state.thisPlayer.isImpostor) {
+            setGameStatus(status.WIN);
+          } else {
+            setGameStatus(status.LOSE);
           }
         }
       };
 
       websocket.current.onclose = () => {
+        if (gameStatus === status.WIN || gameStatus === status.LOSE) {
+          return;
+        }
+
         if (gameStatus === status.LOADING) {
           setGameStatus(status.CONNECTION_FAILED);
-        } else if (gameStatus !== status.FINISHED) {
+        } else {
           setGameStatus(status.DISCONNECTED);
         }
       };
@@ -253,9 +318,11 @@ const Game = (props: GameProps) => {
   }, [
     thisPlayerId,
     gameStatus,
+    state.thisPlayer.isImpostor,
     setThisPlayerId,
     constructInitialGameState,
     updateGameState,
+    updateTasksState,
   ]);
 
   // Shouldn't close connection on every re-render, so use separate useEffect.
@@ -269,21 +336,37 @@ const Game = (props: GameProps) => {
   useEffect(() => {
     const interval = setInterval(() => {
       const [dirX, dirY]: number[] = determineDirection();
-      // predictOtherPlayerMovement();
+
+      if (state.thisPlayer.isImpostor) {
+        findNearbyPlayers();
+      } else {
+        findNearbyTasks();
+      }
 
       if (dirX || dirY) {
         updatePosition(dirX, dirY);
-      } else if (new Date().valueOf() - lastServerUpdate > 100) {
-        const newUpdateTime = new Date();
+      }
 
+      if (new Date().valueOf() - lastServerUpdate > 100) {
         const message: Record<string, any> = {
           PlayerId: thisPlayerId,
-          Timestamp: newUpdateTime,
+          Position: {
+            X: state.thisPlayer.position[0],
+            Y: state.thisPlayer.position[1],
+          },
+          Direction: {
+            X: dirX,
+            Y: dirY,
+          },
+          Kill: null,
+          Task: null,
+          Timestamp: new Date(),
         };
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
           // console.log('Sending update', message);
-          setLastServerUpdate(newUpdateTime.valueOf());
+          const newUpdateTime = new Date().valueOf();
+          setLastServerUpdate(newUpdateTime);
           websocket?.current?.send(JSON.stringify(message));
         }
       }
@@ -314,15 +397,84 @@ const Game = (props: GameProps) => {
     [handleKeyDown]
   );
 
+  function startTask(taskId: string) {
+    const message: Record<string, string | Date> = {
+      PlayerId: thisPlayerId,
+      Timestamp: new Date(),
+      StartTask: taskId,
+    };
+
+    if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+      websocket?.current?.send(JSON.stringify(message));
+    }
+
+    const taskStart = new Date().valueOf();
+    const [currX, currY] = state.thisPlayer.position;
+    taskTimer.current = setInterval(function () {
+      if (new Date().valueOf() - taskStart >= 10000) {
+        const message: Record<string, string | Date> = {
+          PlayerId: thisPlayerId,
+          Timestamp: new Date(),
+          CompleteTask: taskId,
+        };
+
+        if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+          websocket?.current?.send(JSON.stringify(message));
+        }
+
+        console.log(`Completed ${taskId}`, message);
+
+        clearInterval(taskTimer.current);
+        return;
+      }
+
+      if (
+        currX !== state.thisPlayer.position[0] ||
+        currY !== state.thisPlayer.position[1]
+      ) {
+        cancelTask(taskId);
+      }
+    }, 25);
+
+    console.log(`Started ${taskId}`, message);
+  }
+
+  function cancelTask(taskId: string) {
+    const message: Record<string, string | Date> = {
+      PlayerId: thisPlayerId,
+      Timestamp: new Date(),
+      CancelTask: taskId,
+    };
+
+    clearInterval(taskTimer.current);
+
+    if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+      websocket?.current?.send(JSON.stringify(message));
+    }
+
+    console.log(`Cancelled ${taskId}`, message);
+  }
+
+  function killPlayer(killedPlayerId: string) {
+    const message: Record<string, string | Date> = {
+      PlayerId: thisPlayerId,
+      Timestamp: new Date(),
+      Kill: killedPlayerId,
+    };
+
+    if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
+      websocket?.current?.send(JSON.stringify(message));
+    }
+
+    console.log(`Killed ${killedPlayerId}`, message);
+  }
+
   function handleReturnToLogin(event: any) {
     setGameStatus(status.LOADING);
-    setState((gameState) => {
-      for (const key in gameState.otherPlayers) {
-        if (gameState.otherPlayers.hasOwnProperty(key)) {
-          delete gameState.otherPlayers[key];
-        }
-      }
-      return gameState;
+    setState({
+      ...initialGameState,
+      thisPlayer: initialGameState.thisPlayer,
+      otherPlayers: {},
     });
     props.loginHandler(event);
   }
@@ -333,7 +485,6 @@ const Game = (props: GameProps) => {
     }
 
     setGameStatus(status.LOADING);
-    setState((state) => ((state.otherPlayers = {}), state));
 
     websocket.current = new WebSocket(`${url}?name=${props.username}`);
   }, [websocket, props.username]);
@@ -348,7 +499,7 @@ const Game = (props: GameProps) => {
       {gameStatus === status.LOADING && <h1>Loading...</h1>}
       {gameStatus === status.LOBBY && <h1>Waiting for game to start...</h1>}
       {gameStatus === status.PLAYING && (
-        <>
+        <div id="screen" style={{maxWidth: 1280, maxHeight: 720}}>
           <div
             id="stage"
             style={{
@@ -376,38 +527,69 @@ const Game = (props: GameProps) => {
               keyUpHandler={handleKeyUp}
             />
           </div>
-          <div id="info">
+          <div id="info" style={{display: 'flex'}}>
             <h1>
               You are a{!state.thisPlayer.isImpostor && ' Crewmate'}
               {state.thisPlayer.isImpostor && 'n Impostor'}
             </h1>
+            {!state.thisPlayer.isImpostor &&
+              tasksInRange.map((taskId) => (
+                <>
+                  {!currentTasks[taskId].completer && (
+                    <button onClick={() => startTask(taskId)}>
+                      Work on {taskId}
+                    </button>
+                  )}
+                  {currentTasks[taskId].completer === thisPlayerId && (
+                    <button onClick={() => cancelTask(taskId)}>
+                      Stop working on {taskId}
+                    </button>
+                  )}
+                </>
+              ))}
+            {state.thisPlayer.isImpostor &&
+              playersInRange.map((playerId) => (
+                <button onClick={() => killPlayer(playerId)}>
+                  Kill {state.otherPlayers[playerId].playerName}
+                </button>
+              ))}
           </div>
+        </div>
+      )}
+      {gameStatus === status.KILLED && (
+        <>
+          <h1>You have been killed.</h1>
+          <button onClick={handleReturnToLogin}>Play Again</button>
         </>
       )}
-      {gameStatus === status.KILLED && <h1>You have been killed</h1>}
-      {gameStatus === status.FINISHED && (
+      {gameStatus === status.WIN && (
         <>
-          <h1>The game has finished. Thanks for playing!</h1>
+          <h1>You've won! Thanks for playing!</h1>
+          <button onClick={handleReturnToLogin}>Play Again</button>
+        </>
+      )}
+      {gameStatus === status.LOSE && (
+        <>
+          <h1>You lost. Better luck next time.</h1>
           <button onClick={handleReturnToLogin}>Play Again</button>
         </>
       )}
       {gameStatus === status.ERROR && (
         <>
-          <h1>An unexpected error caused an abrupt disconnection</h1>
-          <h1>You have 30 seconds to reconnect or you will be removed</h1>
+          <h1>An unexpected error caused an abrupt disconnection.</h1>
           <button onClick={handleReconnect}>Reconnect</button>
           <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
       )}
       {gameStatus === status.DISCONNECTED && (
         <>
-          <h1>You have been disconnected</h1>
+          <h1>You have been disconnected.</h1>
           <button onClick={handleReturnToLogin}>Back to Login</button>
         </>
       )}
       {gameStatus === status.CONNECTION_FAILED && (
         <>
-          <h1>Failed to connect</h1>
+          <h1>Failed to connect.</h1>
           <button onClick={handleReconnect}>Try Again</button>
           <button onClick={handleReturnToLogin}>Back to Login</button>
         </>

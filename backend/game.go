@@ -338,7 +338,7 @@ PositionNoOp:
 		pVictim.IsAlive = false
 
 		for _, task := range g.Tasks {
-			if !task.IsComplete && *task.Completer == pVictim.PlayerId {
+			if !task.IsComplete && task.Completer != nil && *task.Completer == pVictim.PlayerId {
 				task.Completer = nil
 				task.Start = nil
 			}

@@ -1,6 +1,6 @@
 import React from 'react';
 import {IGameState, TaskState} from './gameState';
-import {determineNewPosition} from './util'
+import {determineNewPosition} from './util';
 
 interface StageProps {
   maxWidth: number;
@@ -79,21 +79,19 @@ const Stage = ({
       Object.entries(tasksState).forEach(([key, val]) => {
         if (
           !val.done &&
-          val.position[0] > left &&
-          val.position[0] < left + windowWidth + 2 * taskRadius &&
-          val.position[1] > top &&
-          val.position[1] < top + windowHeight + 2 * taskRadius
+          val.position[0] > left - taskRadius &&
+          val.position[0] < left + windowWidth + taskRadius &&
+          val.position[1] > top - taskRadius &&
+          val.position[1] < top + windowHeight + taskRadius
         ) {
           const taskPromise = Promise.resolve(() => {
             const circle = new Path2D();
 
             circle.arc(
               canvasWidth / 2 +
-                (val.position[0] - stageX) * (canvasWidth / windowWidth) -
-                taskRadius,
+                (val.position[0] - stageX) * (canvasWidth / windowWidth),
               canvasHeight / 2 +
-                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
-                taskRadius,
+                (val.position[1] - stageY) * (canvasHeight / windowHeight),
               taskRadius,
               0,
               2 * Math.PI
@@ -108,11 +106,10 @@ const Stage = ({
             context.fillText(
               key,
               canvasWidth / 2 +
-                (val.position[0] - stageX) * (canvasWidth / windowWidth) -
-                taskRadius,
+                (val.position[0] - stageX) * (canvasWidth / windowWidth),
               canvasHeight / 2 +
-                (val.position[1] - stageY) * (canvasHeight / windowHeight) -
-                (7 * taskRadius) / 8
+                (val.position[1] - stageY) * (canvasHeight / windowHeight) +
+                taskRadius / 8
             );
           });
 
@@ -122,6 +119,55 @@ const Stage = ({
 
       const playerWidth = 16 * (canvasWidth / windowWidth);
       const playerHeight = 24 * (canvasHeight / windowHeight);
+
+      // Other players.
+      Object.entries(gameState.otherPlayers).forEach(([key, val]) => {
+        if (
+          val.isAlive &&
+          val.position[0] + playerWidth / 2 > left &&
+          val.position[0] < left + windowWidth + playerWidth / 2 &&
+          val.position[1] + playerHeight / 2 > top &&
+          val.position[1] < top + windowHeight + playerHeight / 2
+        ) {
+          const otherPlayerPromise = Promise.resolve(() => {
+            context.fillStyle = val.color;
+
+            const [posX, posY] = determineNewPosition(
+              val.position[0],
+              val.position[1],
+              val.direction[0],
+              val.direction[1],
+              val.lastHeard,
+              0.5
+            );
+
+            context.fillRect(
+              canvasWidth / 2 +
+                (posX - stageX) * (canvasWidth / windowWidth) -
+                playerWidth / 2,
+              canvasHeight / 2 +
+                (posY - stageY) * (canvasHeight / windowHeight) -
+                playerHeight / 2,
+              playerWidth,
+              playerHeight
+            );
+
+            context.fillStyle = '#000000';
+            context.font = 'bold small-caps 18pt cursive';
+            context.textAlign = 'center';
+            context.fillText(
+              val.playerName,
+              canvasWidth / 2 + (posX - stageX) * (canvasWidth / windowWidth),
+              canvasHeight / 2 +
+                (posY - stageY) * (canvasHeight / windowHeight) -
+                playerHeight / 2 -
+                6
+            );
+          });
+
+          drawPromises.push(otherPlayerPromise);
+        }
+      });
 
       // User
       const thisPlayerPromise = Promise.resolve(() => {
@@ -144,48 +190,6 @@ const Stage = ({
         );
       });
       drawPromises.push(thisPlayerPromise);
-
-      // Other players.
-      Object.entries(gameState.otherPlayers).forEach(([key, val]) => {
-        if (
-          val.position[0] + playerWidth / 2 > left &&
-          val.position[0] < left + windowWidth + playerWidth / 2 &&
-          val.position[1] + playerHeight / 2 > top &&
-          val.position[1] < top + windowHeight + playerHeight / 2
-        ) {
-          const otherPlayerPromise = Promise.resolve(() => {
-            context.fillStyle = val.color;
-
-            const [posX, posY, _] = determineNewPosition(val.position[0], val.position[1], val.direction[0], val.direction[1], val.lastHeard)
-
-            context.fillRect(
-              canvasWidth / 2 +
-                (posX - stageX) * (canvasWidth / windowWidth) -
-                playerWidth / 2,
-              canvasHeight / 2 +
-                (posY - stageY) * (canvasHeight / windowHeight) -
-                playerHeight / 2,
-              playerWidth,
-              playerHeight
-            );
-
-            context.fillStyle = '#000000';
-            context.font = 'bold small-caps 18pt cursive';
-            context.textAlign = 'center';
-            context.fillText(
-              val.playerName,
-              canvasWidth / 2 +
-                (posX - stageX) * (canvasWidth / windowWidth),
-              canvasHeight / 2 +
-                (posY - stageY) * (canvasHeight / windowHeight) -
-                playerHeight / 2 -
-                6
-            );
-          });
-
-          drawPromises.push(otherPlayerPromise);
-        }
-      });
 
       // Perform draws.
       Promise.all(drawPromises)

@@ -23,6 +23,7 @@ export interface KeyState {
 
 export interface TaskState {
   position: [number, number];
+  completer: string;
   done: boolean;
 }
 
@@ -78,28 +79,34 @@ export const keyMap: Record<string, KeyState> = {
 };
 
 export const initialTasks: Record<string, TaskState> = {
-  task6: {
-    position: [930, 335],
-    done: false,
-  },
   task0: {
     position: [87, 663],
+    completer: '',
     done: false,
   },
   task1: {
     position: [597, 701],
+    completer: '',
     done: false,
   },
   task2: {
     position: [987, 965],
+    completer: '',
     done: false,
   },
   task3: {
     position: [1055, 677],
+    completer: '',
     done: false,
   },
   task4: {
     position: [1435, 517],
+    completer: '',
+    done: false,
+  },
+  task5: {
+    position: [930, 335],
+    completer: '',
     done: false,
   },
 };
@@ -110,7 +117,8 @@ export enum status {
   PLAYING,
   KILLED,
   BOOTED,
-  FINISHED,
+  WIN,
+  LOSE,
   ERROR,
   DISCONNECTED,
   CONNECTION_FAILED,
