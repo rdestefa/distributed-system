@@ -188,6 +188,8 @@ func (g *game) addPlayer(p *Player) error {
 
 func (g *game) watch() {
 	ticker := time.NewTicker(50 * time.Millisecond) // 20/s
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:

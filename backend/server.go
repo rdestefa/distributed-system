@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -46,8 +47,15 @@ type message struct {
 	last    bool
 }
 
+type CatalogAnnounce struct {
+	Type    string `json:"type"`
+	Owner   string `json:"owner"`
+	Port    int    `json:"port"`
+	Project string `json:"project"`
+}
+
 // newServer initializes a new http server for the game backend
-func newServer() *server {
+func newServer(port int) *server {
 	inbox := make(chan *serverUpdate, 16)
 	s := &server{
 		clients:      make(map[string]*client),
@@ -60,6 +68,8 @@ func newServer() *server {
 	s.serveMux.HandleFunc("/connect", s.connectHandler)
 
 	go s.watch()
+
+	go s.announce(port)
 
 	return s
 }
@@ -104,6 +114,38 @@ func (s *server) connectHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		ErrorLogger.Println(err)
 		return
+	}
+}
+
+func (s *server) announce(port int) {
+	ticker := time.NewTicker(60 * time.Second) // 1/60s
+	defer ticker.Stop()
+
+	_announce := func() {
+		conn, err := net.DialTimeout("udp", "catalog.cse.nd.edu:9097", 10*time.Second)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		msg := CatalogAnnounce{
+			Type:    "game",
+			Owner:   "gsilvasi,rdestefa",
+			Port:    port,
+			Project: "amongus",
+		}
+
+		msgBytes, err := json.Marshal(msg)
+		if err != nil {
+			return
+		}
+
+		conn.Write(msgBytes)
+	}
+
+	_announce()
+	for range ticker.C {
+		_announce()
 	}
 }
 

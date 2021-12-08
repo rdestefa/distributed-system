@@ -71,7 +71,7 @@ func run() error {
 	fmt.Printf("Listening on http://%v\n", l.Addr())
 
 	// Setup http server and connect to address
-	s := newServer()
+	s := newServer(l.Addr().(*net.TCPAddr).Port)
 	hs := &http.Server{
 		Handler:      s,
 		ReadTimeout:  time.Second * 10,
