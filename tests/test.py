@@ -22,7 +22,7 @@ NAVMESH = json.load(open('navmesh.json', 'r'))
 MOVE_SPEED = 120.0
 
 TEST_1 = False
-TEST_2 = True
+TEST_2 = False
 
 
 class DateTimeJSONEncoder(json.JSONEncoder):
@@ -65,7 +65,7 @@ class TestClient:
         self.end = True
         self.wsapp.close()
         self.join()
-    
+
     def join(self):
         if self.wst:
             self.wst.join()
@@ -75,7 +75,8 @@ class TestClient:
             self.sendt = None
 
     def send(self, data, now):
-        data = data | {'PlayerId': self.id, 'Timestamp': now, 'Drift': self.drift}
+        data = data | {'PlayerId': self.id,
+                       'Timestamp': now, 'Drift': self.drift}
         msg = DateTimeJSONEncoder().encode(data)
         self.last_message = now
         self.wsapp.send(msg)
@@ -148,8 +149,10 @@ class TestClient:
             if self.id != None:
                 self.alive = message['Players'][self.id]['IsAlive']
 
-                serverTimestamp = datetime.datetime.strptime(message['Timestamp'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
-                self.drift = (message['Players'][self.id]['DriftFactor'] + (serverTimestamp - datetime.datetime.now().timestamp() * 1000))/2
+                serverTimestamp = datetime.datetime.strptime(
+                    message['Timestamp'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
+                self.drift = (message['Players'][self.id]['DriftFactor'] + (
+                    serverTimestamp - datetime.datetime.now().timestamp() * 1000))/2
 
                 if message['Status'] == 1:
                     self.game_started = True
@@ -166,7 +169,7 @@ class TestClient:
                 now = datetime.datetime.utcnow()
                 if self.last_server_message != None:
                     print((now - self.last_server_message).total_seconds(),
-                        file=self.out_test)
+                          file=self.out_test)
                     self.out_test.flush()
                     self.last_server_message = now
                 else:
@@ -187,31 +190,44 @@ class TestClient:
                                 continue
                             player_now = message['Players'][player_id]
 
-                            last_position = list(player_before['Position'].values())
-                            last_direction = list(player_before['Direction'].values())
-                            last_update = datetime.datetime.strptime(player_before['LastHeard'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
-                            new_position = list(player_now['Position'].values())
-                            new_direction = list(player_now['Direction'].values())
-                            new_update = datetime.datetime.strptime(player_now['LastHeard'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
+                            last_position = list(
+                                player_before['Position'].values())
+                            last_direction = list(
+                                player_before['Direction'].values())
+                            last_update = datetime.datetime.strptime(
+                                player_before['LastHeard'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
+                            new_position = list(
+                                player_now['Position'].values())
+                            new_direction = list(
+                                player_now['Direction'].values())
+                            new_update = datetime.datetime.strptime(
+                                player_now['LastHeard'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
 
                             last_other_drift = player_before['Drift']
                             new_other_drift = player_now['Drift']
 
-                            last_duration = (self.last_position_update - (last_update + last_other_drift - self.drift)) / 1000.0
-                            new_duration = (self.last_position_update - (new_update + new_other_drift - self.drift)) / 1000.0
+                            last_duration = (
+                                self.last_position_update - (last_update + last_other_drift - self.drift)) / 1000.0
+                            new_duration = (
+                                self.last_position_update - (new_update + new_other_drift - self.drift)) / 1000.0
                             # last_duration = (now - (last_update)) / 1000.0
                             # new_duration = (now - (new_update)) / 1000.0
 
                             last_prediction = [
-                                last_position[0] + MOVE_SPEED * last_duration * last_direction[0],
-                                last_position[1] + MOVE_SPEED * last_duration * last_direction[1]
+                                last_position[0] + MOVE_SPEED *
+                                last_duration * last_direction[0],
+                                last_position[1] + MOVE_SPEED *
+                                last_duration * last_direction[1]
                             ]
                             new_prediction = [
-                                new_position[0] + MOVE_SPEED * new_duration * new_direction[0],
-                                new_position[1] + MOVE_SPEED * new_duration * new_direction[1]
+                                new_position[0] + MOVE_SPEED *
+                                new_duration * new_direction[0],
+                                new_position[1] + MOVE_SPEED *
+                                new_duration * new_direction[1]
                             ]
 
-                            error = math.sqrt((last_prediction[0] - new_prediction[0])**2 + (last_prediction[1] - new_prediction[1])**2)
+                            error = math.sqrt(
+                                (last_prediction[0] - new_prediction[0])**2 + (last_prediction[1] - new_prediction[1])**2)
 
                             print(error, file=self.out_test)
                             self.out_test.flush()
