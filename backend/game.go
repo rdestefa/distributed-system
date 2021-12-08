@@ -46,6 +46,7 @@ type Player struct {
 	Direction   Vector
 	LastHeard   Time
 	DriftFactor int64
+	Drift       int64
 }
 
 type Action struct {
@@ -57,6 +58,7 @@ type Action struct {
 	CancelTask   *string
 	CompleteTask *string
 	Timestamp    Time
+	Drift        int64
 }
 
 type Task struct {
@@ -274,6 +276,7 @@ func (g *game) performAction(a *Action) {
 
 	// update drift
 	p.DriftFactor = time.Since(a.Timestamp.Time).Milliseconds()
+	p.Drift = a.Drift
 
 	// update position and direction
 	if a.Position != nil {

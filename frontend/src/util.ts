@@ -20,19 +20,14 @@ export function determineNewPosition(
   currY: number,
   dirX: number,
   dirY: number,
-  lastUpdate: number,
-  serverTimestamp: number,
-  otherPlayer: boolean = false,
-  driftFactor: number = 0,
-  predictionFactor: number = 1
+  otherTime: number,
+  otherDrift: number = 0,
+  thisDrift: number = 0,
+  predictionFactor: number = 1,
 ) {
   const newUpdateTime = new Date().valueOf();
 
-  if (otherPlayer) {
-    driftFactor = (driftFactor + (serverTimestamp - newUpdateTime)) / 2;
-  }
-
-  const duration = (newUpdateTime - (lastUpdate - driftFactor)) / 1000.0;
+  const duration = (newUpdateTime - (otherTime + otherDrift - thisDrift)) / 1000.0;
 
   let newX = currX + movementSpeed * duration * dirX * predictionFactor;
   let newY = currY + movementSpeed * duration * dirY * predictionFactor;

@@ -16,6 +16,7 @@ export interface IPlayerState {
   direction: [number, number];
   lastHeard: number;
   driftFactor: number;
+  drift: number;
 }
 
 export interface KeyState {
@@ -42,6 +43,7 @@ export const initialGameState: IGameState = {
     direction: [0, 0],
     lastHeard: new Date().valueOf(),
     driftFactor: 0,
+    drift: 0,
   },
   otherPlayers: {},
   completedTasks: new Set(),

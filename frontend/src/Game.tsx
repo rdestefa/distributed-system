@@ -49,7 +49,7 @@ function determineDirection() {
 }
 
 const Game = (props: GameProps) => {
-  const url = 'ws://10.26.247.169:10000/connect';
+  const url = 'ws://10.31.123.67:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
@@ -83,6 +83,7 @@ const Game = (props: GameProps) => {
             direction: [val.Direction.X, val.Direction.Y],
             lastHeard: Date.parse(val.LastHeard),
             driftFactor: val.DriftFactor,
+            drift: val.Drift,
           };
 
           if (key === thisPlayerId) {
@@ -109,10 +110,12 @@ const Game = (props: GameProps) => {
 
   const updateGameState = useCallback(
     (gameState: Record<string, any>) => {
+      const serverTimestamp = Date.parse(gameState.Timestamp)
+
       if (gameState.GameId === state.gameId) {
         const newState: IGameState = {
           ...state,
-          timestamp: Date.parse(gameState.Timestamp),
+          timestamp: serverTimestamp,
         };
 
         Object.entries(gameState.Players).forEach(
@@ -130,6 +133,7 @@ const Game = (props: GameProps) => {
                 direction: [val.Direction.X, val.Direction.Y],
                 lastHeard: Date.parse(val.LastHeard),
                 driftFactor: val.DriftFactor,
+                drift: (val.DriftFactor + (serverTimestamp.valueOf() - new Date().valueOf()))/2,
               };
             } else {
               newState.otherPlayers[key] = {
@@ -139,6 +143,7 @@ const Game = (props: GameProps) => {
                 direction: [val.Direction.X, val.Direction.Y],
                 lastHeard: Date.parse(val.LastHeard),
                 driftFactor: val.DriftFactor,
+                drift: val.Drift,
               };
             }
           }
@@ -179,7 +184,6 @@ const Game = (props: GameProps) => {
       dirX,
       dirY,
       lastServerUpdate,
-      state.timestamp
     );
 
     // const distance = Math.sqrt((newX - currX)**2 + (newY - currY)**2);
@@ -369,6 +373,7 @@ const Game = (props: GameProps) => {
           Kill: null,
           Task: null,
           Timestamp: new Date(),
+          Drift: 0,
         };
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
@@ -406,10 +411,11 @@ const Game = (props: GameProps) => {
   );
 
   function startTask(taskId: string) {
-    const message: Record<string, string | Date> = {
+    const message: Record<string, string | Date | number> = {
       PlayerId: thisPlayerId,
       Timestamp: new Date(),
       StartTask: taskId,
+      Drift: state.thisPlayer.drift,
     };
 
     if (websocket?.current?.readyState === 1 && !!thisPlayerId) {

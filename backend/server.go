@@ -64,7 +64,7 @@ func newServer(port int) *server {
 		inbox:        inbox,
 		// rateLimiter:  rate.NewLimiter(rate.Every(1*time.Millisecond), 8), // TODO: change this
 	}
-	s.serveMux.Handle("/", http.FileServer(http.Dir(".")))
+	// s.serveMux.Handle("/", http.FileServer(http.Dir(".")))
 	s.serveMux.HandleFunc("/connect", s.connectHandler)
 
 	go s.watch()
