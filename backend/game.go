@@ -28,10 +28,11 @@ const (
 )
 
 type GameState struct {
-	GameId  string
-	Status  GameStatus
-	Players map[string]*Player
-	Tasks   map[string]*Task
+	GameId    string
+	Status    GameStatus
+	Players   map[string]*Player
+	Tasks     map[string]*Task
+	Timestamp *Time
 }
 
 type Player struct {
@@ -44,6 +45,7 @@ type Player struct {
 	Position    Vector
 	Direction   Vector
 	LastHeard   Time
+	DriftFactor float64
 }
 
 type Action struct {
@@ -220,6 +222,7 @@ func (g *game) sendUpdate() {
 	}
 
 	// marshall game state to free game lock
+	g.GameState.Timestamp = &Time{time.Now()} // T3
 	marshalledGameState, err := json.Marshal(g.GameState)
 	if err != nil {
 		ErrorLogger.Println("sendUpdate failed to marshall game state")
@@ -267,11 +270,10 @@ func (g *game) performAction(a *Action) {
 		return
 	}
 
-	if a.Timestamp.Unix() > time.Now().Unix() {
-		WarnLogger.Println("attempt to perform action in the future:", a.Timestamp.Time, time.Now())
-		return
-	}
+	// update drift
+	p.DriftFactor = time.Since(a.Timestamp.Time).Seconds()
 
+	// update position and direction
 	if a.Position != nil {
 		DebugLogger.Println("Action position: a.Position", a.Position)
 		DebugLogger.Println("Action direction: a.Direction", a.Direction)
