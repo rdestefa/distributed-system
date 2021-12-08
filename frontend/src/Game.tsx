@@ -15,7 +15,7 @@ import background from './background.png';
 
 interface GameProps {
   username: string;
-  loginHandler: React.MouseEventHandler<HTMLButtonElement>;
+  servers: Record<string, any>[];
 }
 
 const keyMappings = keyMap;
@@ -49,7 +49,6 @@ function determineDirection() {
 }
 
 const Game = (props: GameProps) => {
-  const url = 'ws://10.31.123.67:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
@@ -59,13 +58,12 @@ const Game = (props: GameProps) => {
   const [currentTasks, setCurrentTasks] = useState<Record<string, TaskState>>({
     ...initialTasks,
   });
-  const taskTimer = useRef<any>();
-
   const [state, setState] = useState<IGameState>({
     ...initialGameState,
     thisPlayer: initialGameState.thisPlayer,
     otherPlayers: {},
   });
+  const taskTimer = useRef<any>();
 
   let currDir: number[] = [0, 0];
 
@@ -126,9 +124,10 @@ const Game = (props: GameProps) => {
                 return state;
               }
 
-              const thisDrift = (val.DriftFactor + (serverTimestamp.valueOf() - new Date().valueOf())) / 2;
-
-              console.log('Drift:', thisDrift);
+              const thisDrift =
+                (val.DriftFactor +
+                  (serverTimestamp.valueOf() - new Date().valueOf())) /
+                2;
 
               newState.thisPlayer = {
                 ...newState.thisPlayer,
@@ -189,10 +188,6 @@ const Game = (props: GameProps) => {
       dirY,
       lastServerUpdate
     );
-
-    // const distance = Math.sqrt((newX - currX)**2 + (newY - currY)**2);
-    // const duration = newUpdateTime - lastServerUpdate;
-    // console.log(new Date(lastServerUpdate).toISOString(), new Date(newUpdateTime).toISOString(), duration, currX, currY, newX, newY, distance, distance/duration);
 
     if ([dirX, dirY] !== currDir) {
       const currDir: Record<string, number> = {
@@ -264,15 +259,18 @@ const Game = (props: GameProps) => {
   // Establish WebSocket connection.
   useEffect(() => {
     if (!websocket.current) {
-      websocket.current = new WebSocket(`${url}?name=${props.username}`);
+      const server =
+        props.servers[Math.floor(Math.random() * props.servers.length)];
+      const url = `ws://${server.address}:${server.port}/connect?name=${props.username}`;
+
+      websocket.current = new WebSocket(url);
     }
-  }, [props.username]);
+  }, [props.username, props.servers]);
 
   // Set up event handlers separately so state changes are properly observed.
   useEffect(() => {
     if (websocket.current) {
       websocket.current.onopen = () => {
-        console.log(`Connected to ${url}`);
         setGameStatus(status.LOBBY);
       };
 
@@ -284,30 +282,25 @@ const Game = (props: GameProps) => {
         const currState = JSON.parse(message.data);
 
         if (typeof currState === 'string' || currState instanceof String) {
-          console.log('Received player id', currState);
           setThisPlayerId(currState as string);
           return;
         }
 
-        // console.log('Received state', currState);
-
         if (currState?.Status === 1) {
           if (gameStatus !== status.PLAYING) {
-            console.log('Starting game');
             setState(constructInitialGameState(currState));
             setGameStatus(status.PLAYING);
           } else {
-            // console.log('Updating game');
             setState(updateGameState(currState));
             setCurrentTasks(updateTasksState(currState));
           }
-        } else if (currState?.State === 2) {
+        } else if (currState?.Status === 2) {
           if (state.thisPlayer.isImpostor) {
             setGameStatus(status.LOSE);
           } else {
             setGameStatus(status.WIN);
           }
-        } else if (currState?.State === 3) {
+        } else if (currState?.Status === 3) {
           if (state.thisPlayer.isImpostor) {
             setGameStatus(status.WIN);
           } else {
@@ -317,7 +310,11 @@ const Game = (props: GameProps) => {
       };
 
       websocket.current.onclose = () => {
-        if (gameStatus === status.WIN || gameStatus === status.LOSE) {
+        if (
+          gameStatus === status.WIN ||
+          gameStatus === status.LOSE ||
+          gameStatus === status.KILLED
+        ) {
           return;
         }
 
@@ -382,7 +379,6 @@ const Game = (props: GameProps) => {
         };
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
-          // console.log('Sending update', message);
           const newUpdateTime = new Date().valueOf();
           setLastServerUpdate(newUpdateTime);
           websocket?.current?.send(JSON.stringify(message));
@@ -442,8 +438,6 @@ const Game = (props: GameProps) => {
           websocket?.current?.send(JSON.stringify(message));
         }
 
-        console.log(`Completed ${taskId}`, message);
-
         clearInterval(taskTimer.current);
         return;
       }
@@ -455,8 +449,6 @@ const Game = (props: GameProps) => {
         cancelTask(taskId);
       }
     }, 25);
-
-    console.log(`Started ${taskId}`, message);
   }
 
   function cancelTask(taskId: string) {
@@ -472,8 +464,6 @@ const Game = (props: GameProps) => {
     if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
       websocket?.current?.send(JSON.stringify(message));
     }
-
-    console.log(`Cancelled ${taskId}`, message);
   }
 
   function killPlayer(killedPlayerId: string) {
@@ -487,11 +477,9 @@ const Game = (props: GameProps) => {
     if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
       websocket?.current?.send(JSON.stringify(message));
     }
-
-    console.log(`Killed ${killedPlayerId}`, message);
   }
 
-  function handleReturnToLogin(event: any) {
+  function handleReturnToLogin() {
     window.location.reload();
   }
 
@@ -502,8 +490,12 @@ const Game = (props: GameProps) => {
 
     setGameStatus(status.LOADING);
 
-    websocket.current = new WebSocket(`${url}?name=${props.username}`);
-  }, [websocket, props.username]);
+    const server =
+      props.servers[Math.floor(Math.random() * props.servers.length)];
+    const url = `ws://${server.address}:${server.port}/connect?name=${props.username}`;
+
+    websocket.current = new WebSocket(url);
+  }, [websocket, props.username, props.servers]);
 
   // Load background image and polygon mesh for map.
   const backgroundImage = useMemo<Promise<HTMLImageElement>>(() => {
@@ -552,12 +544,12 @@ const Game = (props: GameProps) => {
               tasksInRange.map((taskId) => (
                 <>
                   {!currentTasks[taskId].completer && (
-                    <button onClick={() => startTask(taskId)}>
+                    <button key={taskId} onClick={() => startTask(taskId)}>
                       Work on {taskId}
                     </button>
                   )}
                   {currentTasks[taskId].completer === thisPlayerId && (
-                    <button onClick={() => cancelTask(taskId)}>
+                    <button key={taskId} onClick={() => cancelTask(taskId)}>
                       Stop working on {taskId}
                     </button>
                   )}
@@ -565,7 +557,7 @@ const Game = (props: GameProps) => {
               ))}
             {state.thisPlayer.isImpostor &&
               playersInRange.map((playerId) => (
-                <button onClick={() => killPlayer(playerId)}>
+                <button key={playerId} onClick={() => killPlayer(playerId)}>
                   Kill {state.otherPlayers[playerId].playerName}
                 </button>
               ))}

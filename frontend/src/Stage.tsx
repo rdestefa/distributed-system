@@ -35,7 +35,6 @@ const Stage = ({
   keyDownHandler,
   keyUpHandler,
 }: StageProps) => {
-  // const [frameTime, setFrameTime] = React.useState(performance.now());
   const [stageX, stageY] = stageCenter;
   const [left, top] = [stageX - windowWidth / 2, stageY - windowHeight / 2];
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
@@ -170,7 +169,7 @@ const Stage = ({
         }
       });
 
-      // User
+      // User.
       const thisPlayerPromise = Promise.resolve(() => {
         context.fillStyle = gameState.thisPlayer.color;
 

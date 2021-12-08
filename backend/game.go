@@ -512,7 +512,7 @@ func (g *game) checkEndOfGame() {
 			completedTasks++
 		}
 	}
-	if completedTasks == 5 {
+	if completedTasks == 6 {
 		g.Status = CREWMATES_WIN
 	}
 }
