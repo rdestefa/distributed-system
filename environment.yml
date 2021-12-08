@@ -1,4 +1,4 @@
-name: distsys-project
+name: amongus-distsys-project
 channels:
   - defaults
 dependencies:
