@@ -238,7 +238,6 @@ if TEST_1:
     time.sleep(10)
 elif TEST_2:
     time.sleep(20)
-    print(datetime.datetime.utcnow().timestamp() * 1000)
 else:
     while True:
         time.sleep(10)
