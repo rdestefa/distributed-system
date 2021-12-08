@@ -53,6 +53,7 @@ const Game = (props: GameProps) => {
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
   const [lastServerUpdate, setLastServerUpdate] = useState<number>(0);
+  const [lastPositionUpdate, setLastPositionUpdate] = useState<number>(0);
   const [playersInRange, setPlayersInRange] = useState<string[]>([]);
   const [tasksInRange, setTasksInRange] = useState<string[]>([]);
   const [currentTasks, setCurrentTasks] = useState<Record<string, TaskState>>({
@@ -212,6 +213,8 @@ const Game = (props: GameProps) => {
         websocket?.current?.send(JSON.stringify(message));
       }
     }
+
+    setLastPositionUpdate(newUpdateTime);
 
     setState({
       ...state,
@@ -384,6 +387,8 @@ const Game = (props: GameProps) => {
           websocket?.current?.send(JSON.stringify(message));
         }
       }
+
+      setLastPositionUpdate(new Date().valueOf());
     }, 25);
 
     return () => clearInterval(interval);
@@ -533,6 +538,7 @@ const Game = (props: GameProps) => {
               tasksState={currentTasks as Record<string, TaskState>}
               keyDownHandler={handleKeyDown}
               keyUpHandler={handleKeyUp}
+              lastPositionUpdate={lastPositionUpdate}
             />
           </div>
           <div id="info" style={{display: 'flex'}}>

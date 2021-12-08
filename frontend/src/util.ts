@@ -23,9 +23,8 @@ export function determineNewPosition(
   otherTime: number,
   otherDrift: number = 0,
   thisDrift: number = 0,
+  newUpdateTime: number = new Date().valueOf(),
 ) {
-  const newUpdateTime = new Date().valueOf();
-
   const duration = (newUpdateTime - (otherTime + otherDrift - thisDrift)) / 1000.0;
 
   let newX = currX + movementSpeed * duration * dirX;

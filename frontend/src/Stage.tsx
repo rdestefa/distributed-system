@@ -17,6 +17,7 @@ interface StageProps {
   tasksState: Record<string, TaskState>;
   keyDownHandler: React.KeyboardEventHandler<HTMLCanvasElement>;
   keyUpHandler: React.KeyboardEventHandler<HTMLCanvasElement>;
+  lastPositionUpdate: number;
 }
 
 const Stage = ({
@@ -34,6 +35,7 @@ const Stage = ({
   tasksState,
   keyDownHandler,
   keyUpHandler,
+  lastPositionUpdate,
 }: StageProps) => {
   const [stageX, stageY] = stageCenter;
   const [left, top] = [stageX - windowWidth / 2, stageY - windowHeight / 2];
@@ -138,7 +140,8 @@ const Stage = ({
               val.direction[1],
               val.lastHeard,
               val.drift,
-              gameState.thisPlayer.drift
+              gameState.thisPlayer.drift,
+              lastPositionUpdate,
             );
 
             context.fillRect(
@@ -214,6 +217,7 @@ const Stage = ({
     taskRadius,
     gameState,
     tasksState,
+    lastPositionUpdate,
   ]);
 
   return (

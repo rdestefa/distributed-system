@@ -17,6 +17,8 @@ import (
 	_ "image/png"
 )
 
+const RFC3999Micro = "2006-01-02T15:04:05.999999Z07:00"
+
 // Enum type to describe the state of the game.
 type GameStatus int
 
@@ -558,7 +560,7 @@ func (t *Time) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	ret, err := time.Parse(time.RFC3339Nano, s)
+	ret, err := time.Parse(RFC3999Micro, s)
 	if err != nil {
 		return err
 	}
@@ -567,5 +569,5 @@ func (t *Time) UnmarshalJSON(b []byte) error {
 }
 
 func (t Time) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.Format(time.RFC3339Nano))
+	return json.Marshal(t.Format(RFC3999Micro))
 }
