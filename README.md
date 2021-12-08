@@ -59,3 +59,5 @@ python test.py <n_clients>
 ```
 
 This test will spawn a set number of clients to connect to the server. The server can, of course, handle 10 user-based clients, and that is what this project was designed for, but this makes it much easier to create a full game quickly for testing purposes. This script, however, does not use the JavaScript client, so it does not query the name server. The exact URL / port will for the server will need to be entered into line 44 of the script. Once this is done, run the script with a set number of clients. Then you just need to connect the rest of your user-based clients to the server via the React client and play against the test bots. These are very simple bots that simply run around randomly until hitting a wall or after running the same direction for a certain period of time, as they purely exist to fill up the lobby so the user can test functionality.
+
+Once connected, test clients are permanenelty bound to a game, so the user of the script must ensure that _exactly_ 10 clients (including the user) are connected to the server.
