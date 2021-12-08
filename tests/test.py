@@ -21,8 +21,8 @@ NAVMESH = json.load(open('navmesh.json', 'r'))
 
 MOVE_SPEED = 120.0
 
-TEST_1 = False
-TEST_2 = True
+TEST_1 = True
+TEST_2 = False
 
 
 class DateTimeJSONEncoder(json.JSONEncoder):
@@ -43,7 +43,7 @@ class TestClient:
         self.end = False
 
     def start(self):
-        self.wsapp = websocket.WebSocketApp(f"ws://localhost:10000/connect", header={
+        self.wsapp = websocket.WebSocketApp(f"ws://10.26.247.169:10000/connect", header={
                                             'name': self.name}, on_message=self.on_message, on_close=self.on_close)
         self.wst = threading.Thread(target=self.wsapp.run_forever)
         self.wst.daemon = True
@@ -165,8 +165,7 @@ class TestClient:
             if TEST_1:
                 now = datetime.datetime.utcnow()
                 if self.last_server_message != None:
-                    print((now - self.last_server_message).total_seconds(),
-                        file=self.out_test)
+                    print((now - self.last_server_message).total_seconds(), file=self.out_test)
                     self.out_test.flush()
                     self.last_server_message = now
                 else:
@@ -212,8 +211,9 @@ class TestClient:
                             ]
 
                             error = math.sqrt((last_prediction[0] - new_prediction[0])**2 + (last_prediction[1] - new_prediction[1])**2)
+                            dirchange = math.sqrt((last_direction[0] - new_direction[0])**2 + (last_direction[1] - new_direction[1])**2)
 
-                            print(error, file=self.out_test)
+                            print(error, dirchange, file=self.out_test)
                             self.out_test.flush()
                 self.last_state = message
         except Exception as e:
@@ -225,11 +225,18 @@ class TestClient:
 
 
 # %%
-if len(sys.argv) == 2:
+if len(sys.argv) >= 2:
     N = int(sys.argv[1])
 else:
-    N = 9
-clients = [TestClient(f"test {i}", verbose=False) for i in range(N)]
+    if TEST_1 or TEST_2:
+        N = 10
+    else:
+        N = 9
+if len(sys.argv) >= 3:
+    start = int(sys.argv[2])
+else:
+    start = 0
+clients = [TestClient(f"test {i}", verbose=False) for i in range(start, start+N)]
 print(len(clients), 'clients')
 for client in clients:
     client.start()
@@ -237,7 +244,7 @@ for client in clients:
 if TEST_1:
     time.sleep(10)
 elif TEST_2:
-    time.sleep(20)
+    time.sleep(120)
 else:
     while True:
         time.sleep(10)
