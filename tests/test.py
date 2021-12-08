@@ -2,7 +2,6 @@
 import datetime
 import json
 import math
-import os
 import random
 import sys
 import threading
@@ -12,7 +11,6 @@ import traceback
 
 import websocket
 
-# websocket.enableTrace(True)
 websocket.enableTrace(False)
 
 # %%
@@ -144,8 +142,6 @@ class TestClient:
                 self.sendt.start()
                 return
 
-            # print(message['Timestamp'])
-
             if self.id != None:
                 self.alive = message['Players'][self.id]['IsAlive']
 
@@ -210,8 +206,6 @@ class TestClient:
                                 self.last_position_update - (last_update + last_other_drift - self.drift)) / 1000.0
                             new_duration = (
                                 self.last_position_update - (new_update + new_other_drift - self.drift)) / 1000.0
-                            # last_duration = (now - (last_update)) / 1000.0
-                            # new_duration = (now - (new_update)) / 1000.0
 
                             last_prediction = [
                                 last_position[0] + MOVE_SPEED *
@@ -267,8 +261,3 @@ elif TEST_2:
 else:
     while True:
         time.sleep(10)
-
-# for i, client in reversed(list(enumerate(clients))):
-#     print('Stopping client', client.id)
-#     client.stop()
-#     time.sleep(0.001 * i)
