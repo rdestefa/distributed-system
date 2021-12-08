@@ -49,7 +49,7 @@ function determineDirection() {
 }
 
 const Game = (props: GameProps) => {
-  const url = 'ws://localhost:10000/connect';
+  const url = 'ws://10.31.123.67:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
@@ -126,6 +126,10 @@ const Game = (props: GameProps) => {
                 return state;
               }
 
+              const thisDrift = (val.DriftFactor + (serverTimestamp.valueOf() - new Date().valueOf())) / 2;
+
+              console.log('Drift:', thisDrift);
+
               newState.thisPlayer = {
                 ...newState.thisPlayer,
                 isAlive: val.IsAlive && val.IsConnected,
@@ -133,10 +137,7 @@ const Game = (props: GameProps) => {
                 direction: [val.Direction.X, val.Direction.Y],
                 lastHeard: Date.parse(val.LastHeard),
                 driftFactor: val.DriftFactor,
-                drift:
-                  (val.DriftFactor +
-                    (serverTimestamp.valueOf() - new Date().valueOf())) /
-                  2,
+                drift: thisDrift,
               };
             } else {
               newState.otherPlayers[key] = {
@@ -207,6 +208,7 @@ const Game = (props: GameProps) => {
         },
         Direction: currDir,
         Timestamp: new Date(),
+        Drift: state.thisPlayer.drift,
       };
 
       if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
@@ -376,7 +378,7 @@ const Game = (props: GameProps) => {
           Kill: null,
           Task: null,
           Timestamp: new Date(),
-          Drift: 0,
+          Drift: state.thisPlayer.drift,
         };
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
@@ -429,10 +431,11 @@ const Game = (props: GameProps) => {
     const [currX, currY] = state.thisPlayer.position;
     taskTimer.current = setInterval(function () {
       if (new Date().valueOf() - taskStart >= 10000) {
-        const message: Record<string, string | Date> = {
+        const message: Record<string, string | Date | number> = {
           PlayerId: thisPlayerId,
           Timestamp: new Date(),
           CompleteTask: taskId,
+          Drift: state.thisPlayer.drift,
         };
 
         if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
@@ -457,10 +460,11 @@ const Game = (props: GameProps) => {
   }
 
   function cancelTask(taskId: string) {
-    const message: Record<string, string | Date> = {
+    const message: Record<string, string | Date | number> = {
       PlayerId: thisPlayerId,
       Timestamp: new Date(),
       CancelTask: taskId,
+      Drift: state.thisPlayer.drift,
     };
 
     clearInterval(taskTimer.current);
@@ -473,10 +477,11 @@ const Game = (props: GameProps) => {
   }
 
   function killPlayer(killedPlayerId: string) {
-    const message: Record<string, string | Date> = {
+    const message: Record<string, string | Date | number> = {
       PlayerId: thisPlayerId,
       Timestamp: new Date(),
       Kill: killedPlayerId,
+      Drift: state.thisPlayer.drift,
     };
 
     if (websocket?.current?.readyState === 1 && !!thisPlayerId) {
