@@ -2,7 +2,7 @@
 
 for N in 10 20 30 40 50 60 70 80 90 100; do
     echo N = $N
-    for n in $(seq 1); do
+    for n in $(seq 5); do
         rm out-test\ *
         echo $n
         python test.py $N > /dev/null
