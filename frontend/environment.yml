@@ -1,0 +1,42 @@
+name: distsys-project
+channels:
+  - defaults
+dependencies:
+  - _go_select=2.3.0=cgo
+  - _libgcc_mutex=0.1=main
+  - _openmp_mutex=4.5=1_gnu
+  - ca-certificates=2021.10.26=h06a4308_2
+  - certifi=2021.10.8=py39h06a4308_0
+  - go=1.16.5=h59941bc_0
+  - icu=68.1=h2531618_0
+  - ld_impl_linux-64=2.35.1=h7274673_9
+  - libffi=3.3=he6710b0_2
+  - libgcc-ng=9.3.0=h5101ec6_17
+  - libgfortran-ng=9.3.0=ha5ec8a7_17
+  - libgfortran5=9.3.0=ha5ec8a7_17
+  - libgomp=9.3.0=h5101ec6_17
+  - libstdcxx-ng=9.3.0=hd4cf53a_17
+  - libuv=1.40.0=h7b6447c_0
+  - ncurses=6.3=h7f8727e_2
+  - nodejs=16.6.1=hb931c9a_0
+  - openssl=1.1.1l=h7f8727e_0
+  - pip=21.2.4=py39h06a4308_0
+  - python=3.9.7=h12debd9_1
+  - readline=8.1=h27cfd23_0
+  - setuptools=58.0.4=py39h06a4308_0
+  - sqlite=3.36.0=hc218d9a_0
+  - tk=8.6.11=h1ccaba5_0
+  - tzdata=2021e=hda174b7_0
+  - wheel=0.37.0=pyhd3eb1b0_1
+  - xz=5.2.5=h7b6447c_0
+  - zlib=1.2.11=h7b6447c_3
+  - pip:
+    - charset-normalizer==2.0.9
+    - docopt==0.6.2
+    - idna==3.3
+    - pipreqs==0.4.11
+    - requests==2.26.0
+    - urllib3==1.26.7
+    - websocket-client==1.2.3
+    - yarg==0.1.9
+prefix: /escnfs/home/gsilvasi/miniconda3/envs/distsys-project
