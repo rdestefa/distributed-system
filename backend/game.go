@@ -310,7 +310,7 @@ func (g *game) performAction(a *Action) {
 	}
 PositionNoOp:
 
-	p.LastHeard = Time(a.Timestamp)
+	p.LastHeard = a.Timestamp
 
 	if a.Kill != nil {
 		if g.Status != IN_PROGRESS {

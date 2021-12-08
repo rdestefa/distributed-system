@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from pprint import pprint
+import traceback
 
 import websocket
 
@@ -21,6 +22,7 @@ NAVMESH = json.load(open('navmesh.json', 'r'))
 MOVE_SPEED = 120.0
 
 TEST_1 = False
+TEST_2 = True
 
 
 class DateTimeJSONEncoder(json.JSONEncoder):
@@ -38,9 +40,9 @@ class TestClient:
         self.wst = None
         self.sendt = None
         self.verbose = verbose
+        self.end = False
 
     def start(self):
-        # self.wsapp = websocket.WebSocketApp(f"ws://10.26.247.169:10000/connect", header={
         self.wsapp = websocket.WebSocketApp(f"ws://localhost:10000/connect", header={
                                             'name': self.name}, on_message=self.on_message, on_close=self.on_close)
         self.wst = threading.Thread(target=self.wsapp.run_forever)
@@ -53,9 +55,18 @@ class TestClient:
         self.last_position = None
         self.alive = True
         self.last_server_message = None
+        self.drift = 0
+        self.end = False
+        self.out_test = None
+        self.last_state = None
+        self.last_position_update = datetime.datetime.now().timestamp() * 1000
 
     def stop(self):
+        self.end = True
         self.wsapp.close()
+        self.join()
+    
+    def join(self):
         if self.wst:
             self.wst.join()
             self.wst = None
@@ -64,14 +75,14 @@ class TestClient:
             self.sendt = None
 
     def send(self, data, now):
-        data = data | {'PlayerId': self.id, 'TimeStamp': now}
+        data = data | {'PlayerId': self.id, 'Timestamp': now, 'Drift': self.drift}
         msg = DateTimeJSONEncoder().encode(data)
         self.last_message = now
         self.wsapp.send(msg)
 
     def send_updates(self):
         same_direction = 0
-        while True:
+        while not self.end:
             try:
                 if not self.game_started or not self.alive or self.last_position == None:
                     self.send({}, datetime.datetime.utcnow())
@@ -114,46 +125,100 @@ class TestClient:
                     self.send({'Position': new_position,
                                'Direction': new_direction}, now)
                     self.last_position = new_position
+                    self.last_position_update = datetime.datetime.now().timestamp() * 1000
             except Exception as e:
+                traceback.print_exc()
                 print(e)
                 return
-            time.sleep(0.05)
+            time.sleep(0.10)
 
     def on_message(self, _ws, message):
-        message = json.loads(message)
-        if type(message) == str:
-            self.id = message
-            print(self.name, 'id', self.id)
-            self.sendt = threading.Thread(target=self.send_updates)
-            self.sendt.daemon = True
-            self.sendt.start()
-            return
+        try:
+            message = json.loads(message)
+            if type(message) == str:
+                self.id = message
+                print(self.name, 'id', self.id)
+                self.sendt = threading.Thread(target=self.send_updates)
+                self.sendt.daemon = True
+                self.sendt.start()
+                return
 
-        if TEST_1:
-            now = datetime.datetime.utcnow()
-            if self.last_server_message != None:
-                print((now - self.last_server_message).total_seconds(),
-                      file=self.out_test)
-                self.out_test.flush()
-                os.fsync(self.out_test)
-                self.last_server_message = now
+            # print(message['Timestamp'])
+
+            if self.id != None:
+                self.alive = message['Players'][self.id]['IsAlive']
+
+                serverTimestamp = datetime.datetime.strptime(message['Timestamp'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
+                self.drift = (message['Players'][self.id]['DriftFactor'] + (serverTimestamp - datetime.datetime.now().timestamp() * 1000))/2
+
+                if message['Status'] == 1:
+                    self.game_started = True
+                    if self.last_position == None:
+                        self.last_position = message['Players'][self.id]['Position']
+                        self.last_message = datetime.datetime.utcnow()
+                if message['Status'] == 2 or message['Status'] == 3:
+                    print(self.name, 'game ended')
+                    self.stop()
             else:
-                self.out_test = open('out-'+self.name+'.txt', 'w')
-                self.last_server_message = now
+                return
 
-        if self.id:
-            self.alive = message['Players'][self.id]['IsAlive']
-            if message['Status'] == 1:
-                self.game_started = True
-                if self.last_position == None:
-                    self.last_position = message['Players'][self.id]['Position']
-                    self.last_message = datetime.datetime.utcnow()
-            if message['Status'] == 2 or message['Status'] == 3:
-                print(self.name, 'game ended')
-                self.stop()
+            if TEST_1:
+                now = datetime.datetime.utcnow()
+                if self.last_server_message != None:
+                    print((now - self.last_server_message).total_seconds(),
+                        file=self.out_test)
+                    self.out_test.flush()
+                    self.last_server_message = now
+                else:
+                    self.out_test = open('out-'+self.name+'.txt', 'w')
+                    self.last_server_message = now
 
-        # if self.verbose:
-        #     print('message', self.id, message)
+            if TEST_2:
+                now = datetime.datetime.now()
+                if not self.out_test:
+                    self.out_test = open('out-'+self.name+'.txt', 'w')
+                    self.prediction_cooldown = 5
+                if self.out_test and self.last_state and self.last_position_update:
+                    if self.prediction_cooldown > 0:
+                        self.prediction_cooldown -= 1
+                    else:
+                        for player_id, player_before in self.last_state['Players'].items():
+                            if player_id == self.id:
+                                continue
+                            player_now = message['Players'][player_id]
+
+                            last_position = list(player_before['Position'].values())
+                            last_direction = list(player_before['Direction'].values())
+                            last_update = datetime.datetime.strptime(player_before['LastHeard'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
+                            new_position = list(player_now['Position'].values())
+                            new_direction = list(player_now['Direction'].values())
+                            new_update = datetime.datetime.strptime(player_now['LastHeard'], "%Y-%m-%dT%H:%M:%S.%f%z").timestamp() * 1000
+
+                            last_other_drift = player_before['Drift']
+                            new_other_drift = player_now['Drift']
+
+                            last_duration = (self.last_position_update - (last_update + last_other_drift - self.drift)) / 1000.0
+                            new_duration = (self.last_position_update - (new_update + new_other_drift - self.drift)) / 1000.0
+                            # last_duration = (now - (last_update)) / 1000.0
+                            # new_duration = (now - (new_update)) / 1000.0
+
+                            last_prediction = [
+                                last_position[0] + MOVE_SPEED * last_duration * last_direction[0],
+                                last_position[1] + MOVE_SPEED * last_duration * last_direction[1]
+                            ]
+                            new_prediction = [
+                                new_position[0] + MOVE_SPEED * new_duration * new_direction[0],
+                                new_position[1] + MOVE_SPEED * new_duration * new_direction[1]
+                            ]
+
+                            error = math.sqrt((last_prediction[0] - new_prediction[0])**2 + (last_prediction[1] - new_prediction[1])**2)
+
+                            print(error, file=self.out_test)
+                            self.out_test.flush()
+                self.last_state = message
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
 
     def on_close(self, ws, close_status_code, close_msg):
         print('close', self.id, close_status_code, close_msg)
@@ -171,6 +236,9 @@ for client in clients:
 
 if TEST_1:
     time.sleep(10)
+elif TEST_2:
+    time.sleep(20)
+    print(datetime.datetime.utcnow().timestamp() * 1000)
 else:
     while True:
         time.sleep(10)
