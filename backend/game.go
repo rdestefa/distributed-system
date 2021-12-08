@@ -46,7 +46,7 @@ type Player struct {
 	Direction   Vector
 	LastHeard   Time
 	DriftFactor int64
-	Drift       int64
+	Drift       float64
 }
 
 type Action struct {
@@ -58,7 +58,7 @@ type Action struct {
 	CancelTask   *string
 	CompleteTask *string
 	Timestamp    Time
-	Drift        int64
+	Drift        float64
 }
 
 type Task struct {

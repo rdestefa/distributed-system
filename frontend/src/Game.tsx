@@ -49,7 +49,7 @@ function determineDirection() {
 }
 
 const Game = (props: GameProps) => {
-  const url = 'ws://10.31.123.67:10000/connect';
+  const url = 'ws://localhost:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
@@ -60,6 +60,12 @@ const Game = (props: GameProps) => {
     ...initialTasks,
   });
   const taskTimer = useRef<any>();
+
+  const [state, setState] = useState<IGameState>({
+    ...initialGameState,
+    thisPlayer: initialGameState.thisPlayer,
+    otherPlayers: {},
+  });
 
   let currDir: number[] = [0, 0];
 
@@ -77,7 +83,7 @@ const Game = (props: GameProps) => {
             playerId: val.PlayerId,
             playerName: val.Name,
             color: val.Color,
-            isAlive: val.IsAlive,
+            isAlive: val.IsAlive && val.IsConnected,
             isImpostor: val.IsImpostor,
             position: [val.Position.X, val.Position.Y],
             direction: [val.Direction.X, val.Direction.Y],
@@ -102,15 +108,9 @@ const Game = (props: GameProps) => {
     [thisPlayerId]
   );
 
-  const [state, setState] = useState<IGameState>({
-    ...initialGameState,
-    thisPlayer: initialGameState.thisPlayer,
-    otherPlayers: {},
-  });
-
   const updateGameState = useCallback(
     (gameState: Record<string, any>) => {
-      const serverTimestamp = Date.parse(gameState.Timestamp)
+      const serverTimestamp = Date.parse(gameState.Timestamp);
 
       if (gameState.GameId === state.gameId) {
         const newState: IGameState = {
@@ -128,17 +128,20 @@ const Game = (props: GameProps) => {
 
               newState.thisPlayer = {
                 ...newState.thisPlayer,
-                isAlive: val.IsAlive,
+                isAlive: val.IsAlive && val.IsConnected,
                 position: [val.Position.X, val.Position.Y],
                 direction: [val.Direction.X, val.Direction.Y],
                 lastHeard: Date.parse(val.LastHeard),
                 driftFactor: val.DriftFactor,
-                drift: (val.DriftFactor + (serverTimestamp.valueOf() - new Date().valueOf()))/2,
+                drift:
+                  (val.DriftFactor +
+                    (serverTimestamp.valueOf() - new Date().valueOf())) /
+                  2,
               };
             } else {
               newState.otherPlayers[key] = {
                 ...newState.otherPlayers[key],
-                isAlive: val.IsAlive,
+                isAlive: val.IsAlive && val.IsConnected,
                 position: [val.Position.X, val.Position.Y],
                 direction: [val.Direction.X, val.Direction.Y],
                 lastHeard: Date.parse(val.LastHeard),
@@ -183,7 +186,7 @@ const Game = (props: GameProps) => {
       currY,
       dirX,
       dirY,
-      lastServerUpdate,
+      lastServerUpdate
     );
 
     // const distance = Math.sqrt((newX - currX)**2 + (newY - currY)**2);
@@ -484,13 +487,7 @@ const Game = (props: GameProps) => {
   }
 
   function handleReturnToLogin(event: any) {
-    setGameStatus(status.LOADING);
-    setState({
-      ...initialGameState,
-      thisPlayer: initialGameState.thisPlayer,
-      otherPlayers: {},
-    });
-    props.loginHandler(event);
+    window.location.reload();
   }
 
   const handleReconnect = useCallback(() => {
