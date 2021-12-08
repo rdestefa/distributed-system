@@ -23,14 +23,13 @@ export function determineNewPosition(
   otherTime: number,
   otherDrift: number = 0,
   thisDrift: number = 0,
-  predictionFactor: number = 1,
 ) {
   const newUpdateTime = new Date().valueOf();
 
   const duration = (newUpdateTime - (otherTime + otherDrift - thisDrift)) / 1000.0;
 
-  let newX = currX + movementSpeed * duration * dirX * predictionFactor;
-  let newY = currY + movementSpeed * duration * dirY * predictionFactor;
+  let newX = currX + movementSpeed * duration * dirX;
+  let newY = currY + movementSpeed * duration * dirY;
 
   // Check for collisions and reject move if there is one.
   if (

@@ -139,8 +139,7 @@ const Stage = ({
               val.direction[1],
               val.lastHeard,
               val.drift,
-              gameState.thisPlayer.drift,
-              0.5,
+              gameState.thisPlayer.drift
             );
 
             context.fillRect(
