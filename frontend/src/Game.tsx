@@ -49,7 +49,7 @@ function determineDirection() {
 }
 
 const Game = (props: GameProps) => {
-  const url = 'ws://localhost:10000/connect';
+  const url = 'ws://10.26.247.169:10000/connect';
   const websocket = useRef<WebSocket | null>(null);
   const [thisPlayerId, setThisPlayerId] = useState<string>('');
   const [gameStatus, setGameStatus] = useState<status>(status.LOADING);
@@ -68,6 +68,7 @@ const Game = (props: GameProps) => {
       let initialState: IGameState = {
         ...initialGameState,
         gameId: gameState.GameId,
+        timestamp: Date.parse(gameState.Timestamp),
       };
 
       Object.entries(gameState.Players).forEach(
@@ -81,6 +82,7 @@ const Game = (props: GameProps) => {
             position: [val.Position.X, val.Position.Y],
             direction: [val.Direction.X, val.Direction.Y],
             lastHeard: Date.parse(val.LastHeard),
+            driftFactor: val.DriftFactor,
           };
 
           if (key === thisPlayerId) {
@@ -108,7 +110,10 @@ const Game = (props: GameProps) => {
   const updateGameState = useCallback(
     (gameState: Record<string, any>) => {
       if (gameState.GameId === state.gameId) {
-        const newState: IGameState = {...state};
+        const newState: IGameState = {
+          ...state,
+          timestamp: Date.parse(gameState.Timestamp),
+        };
 
         Object.entries(gameState.Players).forEach(
           ([key, val]: (string | any)[]) => {
@@ -124,6 +129,7 @@ const Game = (props: GameProps) => {
                 position: [val.Position.X, val.Position.Y],
                 direction: [val.Direction.X, val.Direction.Y],
                 lastHeard: Date.parse(val.LastHeard),
+                driftFactor: val.DriftFactor,
               };
             } else {
               newState.otherPlayers[key] = {
@@ -132,6 +138,7 @@ const Game = (props: GameProps) => {
                 position: [val.Position.X, val.Position.Y],
                 direction: [val.Direction.X, val.Direction.Y],
                 lastHeard: Date.parse(val.LastHeard),
+                driftFactor: val.DriftFactor,
               };
             }
           }
@@ -171,7 +178,8 @@ const Game = (props: GameProps) => {
       currY,
       dirX,
       dirY,
-      lastServerUpdate
+      lastServerUpdate,
+      state.timestamp
     );
 
     // const distance = Math.sqrt((newX - currX)**2 + (newY - currY)**2);

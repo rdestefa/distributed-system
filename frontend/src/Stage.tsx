@@ -138,6 +138,9 @@ const Stage = ({
               val.direction[0],
               val.direction[1],
               val.lastHeard,
+              gameState.timestamp,
+              true,
+              val.driftFactor,
               0.5
             );
 

@@ -45,7 +45,7 @@ type Player struct {
 	Position    Vector
 	Direction   Vector
 	LastHeard   Time
-	DriftFactor float64
+	DriftFactor int64
 }
 
 type Action struct {
@@ -273,7 +273,7 @@ func (g *game) performAction(a *Action) {
 	}
 
 	// update drift
-	p.DriftFactor = time.Since(a.Timestamp.Time).Seconds()
+	p.DriftFactor = time.Since(a.Timestamp.Time).Milliseconds()
 
 	// update position and direction
 	if a.Position != nil {

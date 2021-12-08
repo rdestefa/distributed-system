@@ -1,5 +1,6 @@
 export interface IGameState {
   gameId?: string;
+  timestamp: number;
   thisPlayer: IPlayerState;
   otherPlayers: Record<string, IPlayerState>;
   completedTasks: Set<string>;
@@ -14,6 +15,7 @@ export interface IPlayerState {
   position: [number, number];
   direction: [number, number];
   lastHeard: number;
+  driftFactor: number;
 }
 
 export interface KeyState {
@@ -29,6 +31,7 @@ export interface TaskState {
 
 export const initialGameState: IGameState = {
   gameId: '',
+  timestamp: new Date().valueOf(),
   thisPlayer: {
     playerId: '',
     playerName: '',
@@ -38,6 +41,7 @@ export const initialGameState: IGameState = {
     position: [0, 0],
     direction: [0, 0],
     lastHeard: new Date().valueOf(),
+    driftFactor: 0,
   },
   otherPlayers: {},
   completedTasks: new Set(),
